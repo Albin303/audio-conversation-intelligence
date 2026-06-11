@@ -1,0 +1,82 @@
+# AI-Driven Customer Conversation Intelligence Platform
+
+## Source
+- Converted from `sales_conversation_intelligence_presentation.pptx` (9 slides)
+
+## Slide Contents
+
+--- Slide 1 ---
+- AI-Driven Customer Conversation Intelligence Platform
+- Automated Lead Qualification using Artificial Intelligence
+
+--- Slide 2 ---
+- The Business Problem
+  - Customer conversations occur across multiple channels—calls, in-store visits, and voice notes—but even when captured, companies struggle to understand why leads fail to convert or guide sales agents to improve.
+  - Sales agents rely on manual notes, leading to lost details and management visibility gaps.
+  - Fragmented Channels
+  - Manual Data Entry
+  - Lost Information
+  - No Visibility
+
+--- Slide 3 ---
+- Business Impact Analysis
+  1. Lost Revenue Opportunities
+  2. Poor Lead Qualification
+  3. Delayed Follow-Up Cycles
+  4. Repeated Conversations
+  5. No Customer Insights
+  6. Lack of Sales Guidance
+
+--- Slide 4 ---
+- Project Vision
+  - Capture Conversations
+  - Extract Intelligence
+  - Qualify Leads
+  - Update Systems
+  - Generate Insights
+  - Sales Assistant
+
+--- Slide 5 ---
+- System Workflow
+  - Customer Conversation
+  - Speech-to-Text
+  - LLM Analysis
+  - Intent Extraction
+  - Lead Scoring
+  - Data Storage
+  - CRM Update
+  - Automated Follow-up
+  - Dashboard Display
+  - AI Chatbot Insights
+
+--- Slide 6 ---
+- High-Level System Architecture
+  - Customer Interface
+  - Conversation Capture Layer
+  - Speech-to-Text Layer
+  - AI Intelligence Layer
+  - Workflow Automation Layer
+  - Data Storage Layer
+  - Analytics Dashboard
+
+--- Slide 7 ---
+- Management Insights & Visibility
+  - Customer Intent Visibility
+  - Lead Conversion Analytics
+  - Sales Performance Monitoring
+  - Conversion Failure Diagnosis
+
+--- Slide 8 ---
+- Strategic Benefits
+  - Revenue Growth
+  - Operational Efficiency
+  - Data-Driven Decisions
+
+--- Slide 9 ---
+- Key Takeaways
+  - Unified Conversation Capture
+  - Intelligent Lead Qualification
+  - Real-Time Visibility
+  - Faster Sales Cycles
+  - Measurable ROI
+  - "The future of sales is intelligent, automated, and data-driven. Let's transform your business today."
