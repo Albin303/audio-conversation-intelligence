@@ -20,3 +20,9 @@ uvicorn[standard]
 # Optional production diarization backend. Requires HUGGINGFACE_TOKEN and model access.
 pyannote.audio
 httpx
+speechbrain
+sentence-transformers
+hyperpyyaml
+psutil
+
+

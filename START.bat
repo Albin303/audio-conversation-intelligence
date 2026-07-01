@@ -118,6 +118,18 @@ start "Backend API" cmd /k "cd /d "%PROJECT_ROOT%" && .venv\Scripts\python.exe -
 
 timeout /t 3
 
+REM Start Audio Worker in new window
+echo Starting Audio Transcription Worker...
+start "Audio Worker" cmd /k "cd /d "%PROJECT_ROOT%" && set PYTHONIOENCODING=utf-8 && set SPEAKER_MAX_PROFILES=3 && .venv\Scripts\python.exe -m src.workers.run_worker"
+
+timeout /t 2
+
+REM Start ML Worker in new window
+echo Starting ML Analysis Worker...
+start "ML Worker" cmd /k "cd /d "%PROJECT_ROOT%" && set PYTHONIOENCODING=utf-8 && set WORKER_TYPE=ml && .venv\Scripts\python.exe -m src.workers.run_worker"
+
+timeout /t 2
+
 REM Start frontend in new window
 echo Starting Frontend Dev Server...
 start "Frontend Dev" cmd /k "cd /d "%PROJECT_ROOT%\frontend" && npm run dev"

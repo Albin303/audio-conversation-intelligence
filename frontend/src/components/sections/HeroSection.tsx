@@ -1,92 +1,151 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, ChevronDown } from 'lucide-react';
+import Hls from 'hls.js';
+import { scrollToSection } from '@/config/navigation';
+import { Reveal } from '@/components/primitives/Reveal';
+import { MagneticButton } from '@/components/primitives/MagneticButton';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+
+// The silky purple/blue wave video — only lives in the hero
+const HLS_SRC = 'https://stream.mux.com/8wrHPCX2dC3msyYU9ObwqNdm00u3ViXvOSHUMRYSEe5Q.m3u8';
+
+const statChips = [
+  { label: '99.2%', sub: 'Transcription Accuracy' },
+  { label: '< 2s',  sub: 'Avg. Latency' },
+  { label: 'Multi-speaker', sub: 'Auto Diarization' },
+];
 
 export function HeroSection() {
+  const reducedMotion = useReducedMotion();
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ startLevel: -1 });
+      hls.loadSource(HLS_SRC);
+      hls.attachMedia(video);
+      return () => hls.destroy();
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = HLS_SRC;
+    }
+  }, []);
+
   return (
-    <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden py-20 px-8">
-      {/* Background Effects */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-ai-blue/20 rounded-full blur-[128px] animate-pulse-glow" />
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-ai-cyan/10 rounded-full blur-[128px]" />
-      </div>
+    <section
+      id="hero"
+      className="relative flex min-h-[calc(100vh-3.5rem)] items-center justify-center overflow-hidden lg:min-h-screen"
+    >
+      {/* ── Full-bleed video background ── */}
+      <video
+        ref={videoRef}
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute inset-0 h-full w-full object-cover z-0"
+      />
 
-      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-30 pointer-events-none">
-        <img 
-          src="/hero-3d.png" 
-          alt="Background AI Sphere" 
-          className="w-full max-w-[800px] h-auto object-contain animate-pulse-glow mix-blend-luminosity"
-        />
-      </div>
+      {/* Dark vignette — protects readability on all sides */}
+      <div
+        className="absolute inset-0 z-[1] pointer-events-none"
+        style={{
+          background: [
+            'linear-gradient(to bottom, rgba(3,7,18,0.65) 0%, rgba(3,7,18,0.25) 40%, rgba(3,7,18,0.50) 75%, rgba(3,7,18,0.90) 100%)',
+          ].join(', '),
+        }}
+      />
 
-      <div className="relative z-10 max-w-5xl mx-auto text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-ai-blue/30 mb-8"
-        >
-          <Sparkles className="w-4 h-4 text-ai-blue" />
-          <span className="text-sm font-medium bg-clip-text text-transparent bg-gradient-to-r from-ai-blue to-ai-purple">
+      {/* Left/right darkening so side-nav text isn't lost */}
+      <div
+        className="absolute inset-0 z-[1] pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse at center, transparent 40%, rgba(3,7,18,0.55) 100%)',
+        }}
+      />
+
+      {/* ── Content ── */}
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center justify-center text-center px-6 py-24 md:px-10 lg:px-12 lg:py-32">
+
+        <Reveal>
+          <span className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.07] px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80 backdrop-blur-md">
             Next-Gen Audio Intelligence
           </span>
-        </motion.div>
+        </Reveal>
 
-        <motion.h1
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.2, ease: "easeOut" }}
-          className="text-6xl md:text-8xl font-black tracking-tight mb-8 text-gray-900 dark:text-white leading-[1.1]"
+        <Reveal delay={0.06}>
+          <h1 className="font-heading text-balance text-4xl font-bold leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-[5rem]">
+            Transform Conversations&nbsp;into{' '}
+            <span className="bg-gradient-to-r from-violet-300 via-blue-300 to-cyan-300 bg-clip-text text-transparent">
+              Predictive Intelligence
+            </span>
+          </h1>
+        </Reveal>
+
+        <Reveal delay={0.12}>
+          <p className="mt-8 max-w-xl text-lg leading-relaxed text-white/60 text-pretty">
+            Upload your sales calls, extract high-value features, and predict
+            conversion outcomes with extreme accuracy using our cutting-edge AI&nbsp;models.
+          </p>
+        </Reveal>
+
+        <Reveal delay={0.18}>
+          <div className="mt-10 flex flex-wrap gap-4 items-center justify-center">
+            <MagneticButton onClick={() => scrollToSection('live-stream')}>
+              Start Analyzing Now
+              <ArrowRight className="h-4 w-4" />
+            </MagneticButton>
+            <MagneticButton variant="ghost" onClick={() => scrollToSection('prediction')}>
+              View Predictions
+            </MagneticButton>
+          </div>
+        </Reveal>
+
+        {/* Stat chips */}
+        <Reveal delay={0.24} className="w-full">
+          <div className="mt-20 grid grid-cols-1 gap-6 sm:grid-cols-3 w-full max-w-3xl mx-auto">
+            {statChips.map((chip) => (
+              <div
+                key={chip.label}
+                className="rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-md p-6 flex flex-col items-center justify-center text-center transition-all duration-300 hover:scale-[1.03] hover:border-violet-400/40"
+              >
+                <span className="text-2xl font-extrabold text-white">{chip.label}</span>
+                <span className="text-[10px] text-white/50 uppercase tracking-[0.16em] mt-2 font-bold">{chip.sub}</span>
+              </div>
+            ))}
+          </div>
+        </Reveal>
+      </div>
+
+      {/* Scroll cue */}
+      {!reducedMotion && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2, duration: 0.8 }}
+          className="absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"
         >
-          Transform Conversations into <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-ai-blue via-ai-purple to-ai-cyan">
-            Predictive Intelligence
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">
+            Scroll
           </span>
-        </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
-            className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto mb-12 font-light"
+          <motion.button
+            type="button"
+            onClick={() => scrollToSection('live-stream')}
+            animate={{ y: [0, 6, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/50 backdrop-blur-sm transition-colors hover:text-white"
+            aria-label="Scroll to live stream"
           >
-            Upload your sales calls, extract high-value features, and predict conversion outcomes with extreme accuracy using our cutting-edge AI models.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-          >
-          <button 
-            onClick={() => document.getElementById('upload')?.scrollIntoView({ behavior: 'smooth' })}
-            className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-ai-blue border border-transparent rounded-full hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ai-blue"
-          >
-            Start Analyzing Now
-            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-            <div className="absolute inset-0 h-full w-full rounded-full group-hover:animate-ping opacity-20 bg-white" />
-          </button>
-          
-          <button 
-            onClick={() => document.getElementById('prediction')?.scrollIntoView({ behavior: 'smooth' })}
-            className="inline-flex items-center justify-center px-8 py-4 font-semibold text-gray-900 dark:text-white transition-all duration-200 glass rounded-full hover:bg-white/40 dark:hover:bg-white/10"
-          >
-            View Predictions
-          </button>
-          </motion.div>
-      </div>      
-      {/* Scroll Indicator */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.5, duration: 1 }}
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
-      >
-        <span className="text-xs text-gray-400 uppercase tracking-widest">Scroll</span>
-        <div className="w-[1px] h-12 bg-gradient-to-b from-gray-400 to-transparent" />
-      </motion.div>
+            <ChevronDown className="h-4 w-4" />
+          </motion.button>
+        </motion.div>
+      )}
     </section>
   );
 }

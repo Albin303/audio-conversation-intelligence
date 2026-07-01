@@ -3,20 +3,24 @@ from __future__ import annotations
 import json
 import re
 import csv
+import os
 import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from src.aspect_sentiment.diarization import DiarizationResult
-from src.aspect_sentiment.llama_extraction import call_llama
+from src.nexus_ai.repositories.sqlite import FollowUpAlertRepository, init_sqlite
+
+if TYPE_CHECKING:
+    from src.aspect_sentiment.diarization import DiarizationResult
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CSV_PATH = REPO_ROOT / "data" / "processed" / "follow_up_alerts.csv"
 FOLLOW_UP_DB_LOCK = threading.Lock()
+SQLITE_REPOSITORY = FollowUpAlertRepository()
 
 VALID_PRIORITIES = {"High", "Medium", "Low"}
 VALID_STATUSES = {"Pending", "Completed"}
@@ -74,6 +78,10 @@ def utc_now() -> str:
 
 
 def init_follow_up_db(csv_path: Path = DEFAULT_CSV_PATH) -> None:
+    if use_sqlite_storage():
+        init_sqlite()
+        return
+
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     if not csv_path.exists() or csv_path.stat().st_size == 0:
         with csv_path.open("w", newline="", encoding="utf-8") as handle:
@@ -88,6 +96,16 @@ def init_follow_up_db(csv_path: Path = DEFAULT_CSV_PATH) -> None:
 
     upgraded_rows = [{field: row.get(field, "") for field in FOLLOW_UP_CSV_FIELDS} for row in rows]
     _write_alert_rows(upgraded_rows, csv_path)
+
+
+def use_sqlite_storage() -> bool:
+    return os.getenv("NEXUS_STORAGE_BACKEND", "sqlite").lower() == "sqlite"
+
+
+def _sqlite_row_to_alert(row: dict[str, Any]) -> dict[str, Any]:
+    payload = _row_to_alert(row)
+    payload["follow_up_required"] = bool(row.get("follow_up_required"))
+    return payload
 
 
 def _row_to_alert(row: dict[str, Any]) -> dict[str, Any]:
@@ -131,6 +149,18 @@ def list_follow_up_alerts(
     customer_name: str | None = None,
     csv_path: Path = DEFAULT_CSV_PATH,
 ) -> list[dict[str, Any]]:
+    if use_sqlite_storage():
+        init_sqlite()
+        rows = [
+            _sqlite_row_to_alert(row)
+            for row in SQLITE_REPOSITORY.list(
+                priority=priority if priority in VALID_PRIORITIES else None,
+                status=status if status in VALID_STATUSES else None,
+                customer_name=customer_name,
+            )
+        ]
+        return rows
+
     rows = [_row_to_alert(row) for row in _read_alert_rows(csv_path)]
     if priority and priority in VALID_PRIORITIES:
         rows = [row for row in rows if row["priority"] == priority]
@@ -148,6 +178,11 @@ def list_follow_up_alerts(
 def update_follow_up_status(alert_id: str, status: str, csv_path: Path = DEFAULT_CSV_PATH) -> dict[str, Any] | None:
     if status not in VALID_STATUSES:
         raise ValueError("Invalid follow-up status")
+
+    if use_sqlite_storage():
+        init_sqlite()
+        row = SQLITE_REPOSITORY.update_status(alert_id, status)
+        return _sqlite_row_to_alert(row) if row else None
 
     with FOLLOW_UP_DB_LOCK:
         rows = _read_alert_rows(csv_path)
@@ -174,6 +209,36 @@ def save_follow_up_alerts(
 
     created: list[FollowUpAlert] = []
     created_at = utc_now()
+    if use_sqlite_storage():
+        init_sqlite()
+        rows: list[dict[str, Any]] = []
+        for alert in alerts:
+            if not alert.follow_up_required or not alert.action_needed.strip():
+                continue
+            alert.id = alert.id or str(uuid.uuid4())
+            alert.source_name = source_name
+            alert.source_type = source_type
+            alert.created_date = alert.created_date or created_at
+            rows.append(
+                {
+                    "id": alert.id,
+                    "follow_up_required": True,
+                    "customer_name": alert.customer_name,
+                    "company_name": alert.company_name,
+                    "action_needed": alert.action_needed,
+                    "priority": alert.priority,
+                    "reason": alert.reason,
+                    "source_text": alert.source_text,
+                    "created_date": alert.created_date,
+                    "status": alert.status,
+                    "source_name": alert.source_name,
+                    "source_type": alert.source_type,
+                }
+            )
+            created.append(alert)
+        SQLITE_REPOSITORY.save_many(rows)
+        return [alert.to_api_dict() for alert in created]
+
     with FOLLOW_UP_DB_LOCK:
         rows = _read_alert_rows(csv_path)
         for alert in alerts:
@@ -205,7 +270,7 @@ def save_follow_up_alerts(
     return [alert.to_api_dict() for alert in created]
 
 
-def _customer_turns_text(diarization: DiarizationResult, fallback_text: str) -> str:
+def _customer_turns_text(diarization: "DiarizationResult", fallback_text: str) -> str:
     turns = [turn.text.strip() for turn in diarization.turns if turn.speaker == "Customer" and turn.text.strip()]
     return "\n".join(turns) if turns else fallback_text
 
@@ -299,7 +364,7 @@ Customer statements:
 async def detect_follow_up_alerts(
     *,
     customer_text: str,
-    diarization: DiarizationResult,
+    diarization: "DiarizationResult",
     privacy_payload: dict[str, Any],
 ) -> list[FollowUpAlert]:
     source_text = _customer_turns_text(diarization, customer_text)
@@ -311,6 +376,8 @@ async def detect_follow_up_alerts(
 
     alerts: list[FollowUpAlert] = []
     try:
+        from src.aspect_sentiment.llama_extraction import call_llama
+
         response = await call_llama(
             messages=[
                 {"role": "system", "content": "You detect sales CRM follow-up tasks and return only strict JSON."},

@@ -12,8 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +64,9 @@ class TranscriptTurn:
     start: float | None = None
     end: float | None = None
     raw_speaker: str | None = None
+    confidence: float | None = None
+    overlap: bool = False
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -73,6 +74,8 @@ class DiarizationResult:
     turns: list[TranscriptTurn]
     speaker_map: dict[str, str] = field(default_factory=dict)
     provider: str = "heuristic"
+    speaker_confidence: dict[str, float] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def formatted(self) -> str:
@@ -80,11 +83,124 @@ class DiarizationResult:
 
     @property
     def customer_text(self) -> str:
-        return " ".join(turn.text for turn in self.turns if turn.speaker == "Customer").strip()
+        return " ".join(turn.text for turn in self.turns if turn.speaker in {"Customer", "Guest"}).strip()
+
+    @property
+    def guest_text(self) -> str:
+        return " ".join(turn.text for turn in self.turns if turn.speaker == "Guest").strip()
 
     @property
     def agent_text(self) -> str:
         return " ".join(turn.text for turn in self.turns if turn.speaker == "Agent").strip()
+
+    @property
+    def speaker_confidence_resolved(self) -> dict[str, float]:
+        resolved = {}
+        for spk, conf in self.speaker_confidence.items():
+            resolved_spk = self.speaker_map.get(spk, spk)
+            resolved[resolved_spk] = conf
+        for turn in self.turns:
+            if turn.speaker and turn.confidence is not None:
+                if turn.speaker not in resolved:
+                    resolved[turn.speaker] = turn.confidence
+                else:
+                    # average it if already present
+                    resolved[turn.speaker] = (resolved[turn.speaker] + turn.confidence) / 2
+        return {k: round(v, 4) for k, v in resolved.items()}
+
+    @property
+    def speaker_duration(self) -> dict[str, float]:
+        durations = {}
+        for turn in self.turns:
+            if not turn.speaker:
+                continue
+            if turn.start is not None and turn.end is not None:
+                dur = max(0.0, turn.end - turn.start)
+            else:
+                dur = len(turn.text.split()) / 2.5
+            durations[turn.speaker] = durations.get(turn.speaker, 0.0) + dur
+        return {spk: round(dur, 4) for spk, dur in durations.items()}
+
+    @property
+    def speaking_ratio(self) -> dict[str, float]:
+        durations = self.speaker_duration
+        total_duration = sum(durations.values())
+        if total_duration <= 0:
+            return {spk: 0.0 for spk in durations}
+        return {spk: round(dur / total_duration, 4) for spk, dur in durations.items()}
+
+    @property
+    def silence_duration(self) -> float:
+        timed_turns = sorted(
+            [t for t in self.turns if t.start is not None and t.end is not None],
+            key=lambda t: t.start
+        )
+        if not timed_turns:
+            return 0.0
+        
+        silence = 0.0
+        max_end = timed_turns[0].end
+        for turn in timed_turns[1:]:
+            if turn.start > max_end:
+                silence += turn.start - max_end
+            max_end = max(max_end, turn.end)
+        return round(silence, 4)
+
+    @property
+    def interruptions(self) -> dict[str, int]:
+        counts = {spk: 0 for spk in set(t.speaker for t in self.turns if t.speaker)}
+        timed_turns = sorted(
+            [t for t in self.turns if t.start is not None and t.end is not None and t.speaker],
+            key=lambda t: t.start
+        )
+        for i in range(1, len(timed_turns)):
+            prev_turn = timed_turns[i - 1]
+            curr_turn = timed_turns[i]
+            if curr_turn.speaker != prev_turn.speaker:
+                if curr_turn.start < prev_turn.end - 0.05:
+                    counts[curr_turn.speaker] = counts.get(curr_turn.speaker, 0) + 1
+        return counts
+
+    @property
+    def average_turn_length(self) -> dict[str, float]:
+        durations = {}
+        counts = {}
+        for turn in self.turns:
+            if not turn.speaker:
+                continue
+            if turn.start is not None and turn.end is not None:
+                dur = max(0.0, turn.end - turn.start)
+            else:
+                dur = len(turn.text.split()) / 2.5
+            durations[turn.speaker] = durations.get(turn.speaker, 0.0) + dur
+            counts[turn.speaker] = counts.get(turn.speaker, 0) + 1
+        return {spk: round(durations[spk] / counts[spk], 4) if counts[spk] > 0 else 0.0 for spk in durations}
+
+    @property
+    def consecutive_turns(self) -> dict[str, int]:
+        consecutive = {}
+        prev_speaker = None
+        for turn in self.turns:
+            if not turn.speaker:
+                continue
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", turn.text) if s.strip()]
+            for _ in sentences:
+                if turn.speaker == prev_speaker:
+                    consecutive[turn.speaker] = consecutive.get(turn.speaker, 0) + 1
+                prev_speaker = turn.speaker
+        return consecutive
+
+    @property
+    def metrics(self) -> dict[str, Any]:
+        return {
+            "speaker_confidence": self.speaker_confidence_resolved,
+            "speaker_duration": self.speaker_duration,
+            "speaking_ratio": self.speaking_ratio,
+            "interruptions": self.interruptions,
+            "average_turn_length": self.average_turn_length,
+            "silence_duration": self.silence_duration,
+            "consecutive_turns": self.consecutive_turns,
+        }
 
 
 def _normalize_role(label: str) -> str:
@@ -93,6 +209,8 @@ def _normalize_role(label: str) -> str:
         return "Customer"
     if compact == "agent":
         return "Agent"
+    if compact == "guest":
+        return "Guest"
     if compact in {"speaker a", "speaker a"}:
         return "Customer"
     if compact in {"speaker b", "speaker b"}:
@@ -102,6 +220,32 @@ def _normalize_role(label: str) -> str:
 
 def _overlap_seconds(start_a: float, end_a: float, start_b: float, end_b: float) -> float:
     return max(0.0, min(end_a, end_b) - max(start_a, start_b))
+
+
+def _turn_overlap_count(
+    start: float,
+    end: float,
+    intervals: list[tuple[float, float, str]],
+) -> int:
+    speakers = {
+        speaker
+        for interval_start, interval_end, speaker in intervals
+        if _overlap_seconds(start, end, interval_start, interval_end) > 0.05
+    }
+    return len(speakers)
+
+
+def _role_from_classification(result: dict[str, Any]) -> str:
+    role = str(result.get("role") or "Unknown").title()
+    if role not in {"Agent", "Customer", "Guest"}:
+        return "Unknown"
+    confidence = float(result.get("confidence", 0.0) or 0.0)
+    threshold = float(os.getenv("ROLE_CONFIDENCE_THRESHOLD", "0.85"))
+    return role if confidence >= threshold else "Unknown"
+
+
+def _mean(values: list[float]) -> float:
+    return round(sum(values) / len(values), 4) if values else 0.0
 
 
 def _guess_speaker_from_text(text: str, index: int, fallback: str | None = None) -> str:
@@ -148,6 +292,9 @@ def _split_turn_by_sentence(
                 text=turn.text,
                 start=turn.start,
                 end=turn.end,
+                confidence=turn.confidence,
+                overlap=turn.overlap,
+                warnings=list(turn.warnings),
             )
         ]
 
@@ -174,6 +321,9 @@ def _split_turn_by_sentence(
                 text=part,
                 start=part_start,
                 end=part_end,
+                confidence=turn.confidence,
+                overlap=turn.overlap,
+                warnings=list(turn.warnings),
             )
         )
 
@@ -198,6 +348,15 @@ def _merge_turns(turns: list[TranscriptTurn]) -> list[TranscriptTurn]:
         if merged and merged[-1].speaker == turn.speaker:
             merged[-1].text = f"{merged[-1].text} {turn.text}".strip()
             merged[-1].end = turn.end if turn.end is not None else merged[-1].end
+            if merged[-1].confidence is not None or turn.confidence is not None:
+                confidence_values = [
+                    value
+                    for value in (merged[-1].confidence, turn.confidence)
+                    if value is not None
+                ]
+                merged[-1].confidence = _mean(confidence_values)
+            merged[-1].overlap = merged[-1].overlap or turn.overlap
+            merged[-1].warnings = list(dict.fromkeys([*merged[-1].warnings, *turn.warnings]))
         else:
             merged.append(turn)
     return merged
@@ -317,10 +476,18 @@ def _heuristic_audio_diarization(whisper_segments: list[dict[str, Any]], provide
             text=str(segment.get("text", "")).strip(),
             start=float(segment.get("start", 0.0) or 0.0),
             end=float(segment.get("end", 0.0) or 0.0),
+            confidence=0.45,
+            warnings=["heuristic_speaker_assignment"],
         )
         for index, segment in enumerate(whisper_segments)
     ]
-    return DiarizationResult(turns=_refine_turn_roles(turns), speaker_map={"SPEAKER_0": "Customer", "SPEAKER_1": "Agent"}, provider=provider)
+    return DiarizationResult(
+        turns=_refine_turn_roles(turns),
+        speaker_map={"SPEAKER_0": "Customer", "SPEAKER_1": "Agent"},
+        provider=provider,
+        speaker_confidence={"SPEAKER_0": 0.45, "SPEAKER_1": 0.45},
+        warnings=["heuristic_speaker_assignment"],
+    )
 
 
 def _free_local_diarization(audio_path: Path, whisper_segments: list[dict[str, Any]]) -> DiarizationResult | None:
@@ -334,6 +501,8 @@ def _free_local_diarization(audio_path: Path, whisper_segments: list[dict[str, A
         return None
 
     try:
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
         samples, sample_rate = _load_audio_mono(audio_path)
         feature_rows = [
             _acoustic_features(
@@ -365,6 +534,7 @@ def _free_local_diarization(audio_path: Path, whisper_segments: list[dict[str, A
             text=str(segment.get("text", "")).strip(),
             start=float(segment.get("start", 0.0) or 0.0),
             end=float(segment.get("end", 0.0) or 0.0),
+            confidence=0.65,
         )
         for index, (label, segment) in enumerate(zip(labels, usable_segments))
     ]
@@ -373,6 +543,7 @@ def _free_local_diarization(audio_path: Path, whisper_segments: list[dict[str, A
         turns=_refine_turn_roles(turns, preserve_speakers=True),
         speaker_map=speaker_map,
         provider="free-local-kmeans+stable-roles",
+        speaker_confidence={speaker: 0.65 for speaker in speaker_map},
     )
 
 
@@ -396,9 +567,349 @@ def _load_pyannote_pipeline():
         return None
 
 
+def _extract_json(text: str) -> dict[str, Any]:
+    text_stripped = text.strip()
+    try:
+        import json
+        return json.loads(text_stripped)
+    except json.JSONDecodeError:
+        pass
+
+    # Try finding markdown code block
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", text_stripped, re.DOTALL | re.IGNORECASE)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding the first '{' and last '}'
+    first_brace = text_stripped.find("{")
+    last_brace = text_stripped.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(text_stripped[first_brace:last_brace+1])
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("Could not extract valid JSON from LLM response.")
+
+
+def _llm_based_diarization(whisper_segments: list[dict[str, Any]]) -> DiarizationResult | None:
+    provider = os.getenv("DIARIZATION_LLM_PROVIDER")
+    minimax_key = os.getenv("MINIMAX_API_KEY")
+    groq_key = os.getenv("LLAMA_API_KEY") or os.getenv("GROQ_API_KEY")
+
+    if not provider:
+        if minimax_key and not minimax_key.startswith("test-"):
+            provider = "minimax"
+        else:
+            provider = "groq"
+    provider = provider.lower()
+
+    if provider == "minimax" and (not minimax_key or minimax_key.startswith("test-")):
+        logger.info("MiniMax API key is missing or a placeholder. Falling back to Groq.")
+        provider = "groq"
+
+    import json
+    usable_segments = [seg for seg in whisper_segments if str(seg.get("text", "")).strip()]
+    if not usable_segments:
+        return None
+
+    def execute_call(active_provider: str) -> DiarizationResult | None:
+        if active_provider == "minimax":
+            api_key = minimax_key
+            if not api_key or api_key.startswith("test-"):
+                raise ValueError("Invalid/Placeholder MiniMax key")
+            base_url = os.getenv("MINIMAX_API_URL", "https://api.minimax.io/v1")
+            model = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
+        else:
+            api_key = groq_key
+            if not api_key:
+                raise ValueError("Groq/LLaMA API key not configured for diarization.")
+            base_url = os.getenv("LLAMA_API_URL", "https://api.groq.com/openai/v1")
+            base_url = base_url.removesuffix("/chat/completions").rstrip("/")
+            model = os.getenv("LLAMA_MODEL", "llama3-8b-8192")
+
+        logger.info(f"Running LLM-based Diarization via {active_provider.upper()} ({model})...")
+        
+        segments_json = [
+            {"id": i, "text": str(seg.get("text", "")).strip()}
+            for i, seg in enumerate(usable_segments)
+        ]
+
+        prompt = f"""You are an expert transcriber. Review the following audio segments and assign a speaker to each based on the conversation context.
+
+Speakers can be:
+- "Agent" - the sales representative, support agent, or meeting host
+- "Customer" - the primary customer or client being spoken to
+- "Guest" - any additional participant
+
+Return a JSON object with a single key "turns" containing an array of objects.
+Each object must have "id" (integer matching the segment id) and "speaker" (either "Agent", "Customer", or "Guest").
+Do not include any markdown or extra text.
+
+Segments:
+{json.dumps(segments_json, indent=2)}"""
+
+        import httpx
+        
+        chat_completions_url = f"{base_url}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+        }
+        if active_provider != "minimax":
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        response = httpx.post(
+            chat_completions_url,
+            headers=headers,
+            json=payload,
+            timeout=60.0
+        )
+        response.raise_for_status()
+
+        content = response.json()["choices"][0]["message"]["content"]
+        parsed = _extract_json(content)
+
+        raw_turns = parsed.get("turns", [])
+        speaker_mapping = {rt.get("id"): rt.get("speaker") for rt in raw_turns if "id" in rt}
+        
+        turns = []
+        for i, seg in enumerate(usable_segments):
+            speaker_label = speaker_mapping.get(i) or _guess_speaker_from_text(str(seg.get("text", "")), i)
+            turns.append(TranscriptTurn(
+                speaker=speaker_label,
+                raw_speaker="SPEAKER_LLM",
+                text=str(seg.get("text", "")).strip(),
+                start=float(seg.get("start", 0.0) or 0.0),
+                end=float(seg.get("end", 0.0) or 0.0),
+            ))
+
+        return DiarizationResult(
+            turns=_merge_turns(turns),
+            speaker_map={"SPEAKER_LLM": "Agent/Customer"},
+            provider=f"llm-{active_provider}-{model}",
+        )
+
+    try:
+        return execute_call(provider)
+    except Exception as exc:
+        logger.warning(f"LLM Diarization via {provider.upper()} failed: {exc}")
+        if provider == "minimax" and groq_key:
+            logger.info("Falling back to Groq for LLM Diarization...")
+            try:
+                return execute_call("groq")
+            except Exception as groq_exc:
+                logger.warning(f"Fallback LLM Diarization via GROQ failed: {groq_exc}")
+        return None
+
+
 def diarize_audio_segments(audio_path: Path, whisper_segments: list[dict[str, Any]]) -> DiarizationResult:
     if not whisper_segments:
         return DiarizationResult(turns=[], provider="empty")
+
+    enable_tracking = os.getenv("ENABLE_SPEAKER_TRACKING", "true").lower() == "true"
+    if enable_tracking:
+        try:
+            logger.info("Running real-time VAD & Speaker Tracking pipeline...")
+            from src.aspect_sentiment.vad import get_speech_segments
+            from src.aspect_sentiment.embeddings import get_speaker_embedding
+            from src.aspect_sentiment.tracking import SpeakerTracker
+            from src.aspect_sentiment.role_classifier import classify_role_hybrid
+            from src.aspect_sentiment.flow_validator import validate_and_correct_roles
+            
+            # 1. Silero VAD: Get speech segments
+            vad_segments = get_speech_segments(audio_path)
+            if not vad_segments:
+                logger.warning("VAD returned no speech segments. Falling back to whisper segments.")
+                vad_segments = [{"start": float(s.get("start", 0.0)), "end": float(s.get("end", 0.0))} for s in whisper_segments]
+                
+            # 2. Extract ECAPA embeddings and Track speakers
+            samples, sample_rate = _load_audio_mono(audio_path)
+            tracker = SpeakerTracker()
+            
+            segment_speaker_map = []
+            tracker_confidence: dict[str, list[float]] = {}
+            for seg in vad_segments:
+                start = seg["start"]
+                end = seg["end"]
+                seg_samples = _segment_samples(samples, sample_rate, start, end)
+                emb = get_speaker_embedding(seg_samples)
+                match = tracker.track_speaker_with_confidence(emb)
+                speaker_id = match.speaker
+                tracker_confidence.setdefault(speaker_id, []).append(match.confidence)
+                segment_speaker_map.append({
+                    "start": start,
+                    "end": end,
+                    "speaker": speaker_id,
+                    "confidence": match.confidence,
+                    "is_new": match.is_new,
+                })
+                
+            # 3. Align Whisper transcript segments with VAD speakers
+            raw_turns = []
+            for index, segment in enumerate(whisper_segments):
+                w_start = float(segment.get("start", 0.0) or 0.0)
+                w_end = float(segment.get("end", w_start) or w_start)
+                w_text = str(segment.get("text", "")).strip()
+                
+                overlaps = {}
+                overlap_confidences: dict[str, list[float]] = {}
+                for vs in segment_speaker_map:
+                    overlap = _overlap_seconds(w_start, w_end, vs["start"], vs["end"])
+                    if overlap > 0:
+                        overlaps[vs["speaker"]] = overlaps.get(vs["speaker"], 0.0) + overlap
+                        overlap_confidences.setdefault(vs["speaker"], []).append(float(vs.get("confidence", 0.0)))
+                        
+                if overlaps:
+                    assigned_speaker = max(overlaps, key=overlaps.get)
+                    total_overlap = sum(overlaps.values())
+                    alignment_confidence = overlaps[assigned_speaker] / total_overlap if total_overlap else 0.0
+                    embedding_confidence = _mean(overlap_confidences.get(assigned_speaker, []))
+                    turn_confidence = _mean([alignment_confidence, embedding_confidence])
+                else:
+                    assigned_speaker = "Speaker_A" if index % 2 == 0 else "Speaker_B"
+                    turn_confidence = 0.35
+
+                is_overlap = sum(1 for value in overlaps.values() if value > 0.05) > 1
+                warnings = []
+                if not overlaps:
+                    warnings.append("speaker_alignment_fallback")
+                if is_overlap:
+                    warnings.append("overlapping_speech_detected")
+                    
+                raw_turns.append(TranscriptTurn(
+                    speaker=assigned_speaker,
+                    raw_speaker=assigned_speaker,
+                    text=w_text,
+                    start=w_start,
+                    end=w_end,
+                    confidence=round(turn_confidence, 4),
+                    overlap=is_overlap,
+                    warnings=warnings,
+                ))
+                
+            # 4. Role Classification (Primary: Rules, Fallback: MiniLM)
+            speaker_texts = {}
+            for turn in raw_turns:
+                speaker_texts[turn.speaker] = speaker_texts.get(turn.speaker, "") + " " + turn.text
+            total_role_words = sum(len(text.split()) for text in speaker_texts.values())
+                
+            classifications = {}
+            for spk, text in speaker_texts.items():
+                cleaned_text = text.strip()
+                classifications[spk] = classify_role_hybrid(
+                    spk,
+                    cleaned_text,
+                    speaker_word_count=len(cleaned_text.split()),
+                    total_word_count=total_role_words,
+                )
+                
+            # 5. Conversation Flow Order Validation & Correction
+            validator_turns = [{"speaker": t.speaker, "text": t.text} for t in raw_turns]
+            corrected_classifications = validate_and_correct_roles(
+                validator_turns, 
+                classifications,
+                threshold=float(os.getenv("ROLE_CONFIDENCE_THRESHOLD", "0.85"))
+            )
+            
+            # Resolve roles using sorting by Agent probability to prevent collisions and support Guest
+            sorted_by_agent = sorted(
+                corrected_classifications.items(),
+                key=lambda item: float(
+                    item[1].get("probability", {}).get("Agent", 1.0 if item[1].get("role") == "Agent" else 0.0)
+                )
+            )
+            
+            speaker_map = {}
+            speaker_confidence = {}
+            
+            if len(sorted_by_agent) >= 3:
+                # 3 or more speakers: map extremes to Customer/Agent, middle ones to Guest
+                customer_spk = sorted_by_agent[0][0]
+                agent_spk = sorted_by_agent[-1][0]
+                speaker_map[customer_spk] = "Customer"
+                speaker_map[agent_spk] = "Agent"
+                for spk, _ in sorted_by_agent[1:-1]:
+                    speaker_map[spk] = "Guest"
+            elif len(sorted_by_agent) == 2:
+                # 2 speakers: map to Customer and Agent
+                customer_spk = sorted_by_agent[0][0]
+                agent_spk = sorted_by_agent[1][0]
+                speaker_map[customer_spk] = "Customer"
+                speaker_map[agent_spk] = "Agent"
+            elif len(sorted_by_agent) == 1:
+                # 1 speaker: use fallback
+                spk, result = sorted_by_agent[0]
+                speaker_map[spk] = _role_from_classification(result)
+                
+            for spk, result in corrected_classifications.items():
+                if spk not in speaker_map:
+                    speaker_map[spk] = _role_from_classification(result)
+                role_confidence = float(result.get("confidence", 0.0) or 0.0)
+                embedding_confidence = _mean(tracker_confidence.get(spk, []))
+                confidence_values = [value for value in [role_confidence, embedding_confidence] if value > 0]
+                speaker_confidence[spk] = _mean(confidence_values)
+                
+            final_turns = []
+            pipeline_warnings = []
+            for turn in raw_turns:
+                final_role = speaker_map.get(turn.speaker, "Unknown")
+                turn_confidence_values = [
+                    value for value in [turn.confidence, speaker_confidence.get(turn.speaker)] if value is not None
+                ]
+                turn_warnings = list(turn.warnings)
+                if final_role == "Unknown":
+                    turn_warnings.append("low_role_confidence")
+                pipeline_warnings.extend(turn_warnings)
+                final_turns.append(TranscriptTurn(
+                    speaker=final_role,
+                    raw_speaker=turn.speaker,
+                    text=turn.text,
+                    start=turn.start,
+                    end=turn.end,
+                    confidence=_mean(turn_confidence_values),
+                    overlap=turn.overlap,
+                    warnings=turn_warnings,
+                ))
+                
+            merged_turns = _merge_turns(final_turns)
+            
+            # If the acoustic pipeline grouped everything into 1 speaker, fall back to LLM semantic diarization
+            use_llm = os.getenv("USE_LLM_DIARIZATION", os.getenv("USE_GROQ_WHISPER", "true")).lower() == "true"
+            if len(speaker_map) <= 1 and use_llm:
+                logger.info("Acoustic pipeline detected only 1 speaker. Falling back to LLM semantic diarization.")
+                llm_result = _llm_based_diarization(whisper_segments)
+                if llm_result:
+                    return llm_result
+
+            return DiarizationResult(
+                turns=merged_turns,
+                speaker_map=speaker_map,
+                provider="vad-ecapa-tracking",
+                speaker_confidence=speaker_confidence,
+                warnings=list(dict.fromkeys(pipeline_warnings)),
+            )
+        except Exception as e:
+            logger.error(f"Real-time speaker tracking pipeline failed: {e}. Falling back to previous implementations.", exc_info=True)
+
+    # Fallback to previous implementations
+    use_llm = os.getenv("USE_LLM_DIARIZATION", os.getenv("USE_GROQ_WHISPER", "true")).lower() == "true"
+    if use_llm:
+        logger.info("LLM-based Diarization is active. Bypassing Pyannote.")
+        result = _llm_based_diarization(whisper_segments)
+        if result is not None:
+            return result
+        # Fallback if LLM fails
+        return _heuristic_audio_diarization(whisper_segments, provider="heuristic-llm-fallback")
 
     backend = os.getenv("DIARIZATION_BACKEND", "free-local").strip().lower()
     if backend in {"free", "free-local", "local", "kmeans"}:
@@ -439,9 +950,28 @@ def diarize_audio_segments(audio_path: Path, whisper_segments: list[dict[str, An
             if overlap > 0:
                 overlaps[speaker] = overlaps.get(speaker, 0.0) + overlap
         raw_speaker = max(overlaps, key=overlaps.get) if overlaps else f"SPEAKER_{index % 2}"
+        total_overlap = sum(overlaps.values())
+        confidence = overlaps[raw_speaker] / total_overlap if total_overlap else 0.4
+        overlap_detected = sum(1 for value in overlaps.values() if value > 0.05) > 1
+        warnings = []
+        if not overlaps:
+            warnings.append("speaker_alignment_fallback")
+        if overlap_detected:
+            warnings.append("overlapping_speech_detected")
         if raw_speaker not in raw_speaker_order:
             raw_speaker_order.append(raw_speaker)
-        raw_turns.append(TranscriptTurn(speaker=raw_speaker, raw_speaker=raw_speaker, text=text, start=start, end=end))
+        raw_turns.append(
+            TranscriptTurn(
+                speaker=raw_speaker,
+                raw_speaker=raw_speaker,
+                text=text,
+                start=start,
+                end=end,
+                confidence=round(confidence, 4),
+                overlap=overlap_detected,
+                warnings=warnings,
+            )
+        )
 
     speaker_scores: dict[str, dict[str, int]] = {speaker: {"customer": 0, "agent": 0} for speaker in raw_speaker_order}
     for turn in raw_turns:
@@ -464,13 +994,23 @@ def diarize_audio_segments(audio_path: Path, whisper_segments: list[dict[str, An
             text=turn.text,
             start=turn.start,
             end=turn.end,
+            confidence=turn.confidence,
+            overlap=turn.overlap,
+            warnings=list(turn.warnings),
         )
         for index, turn in enumerate(raw_turns)
     ]
+    speaker_confidence = {
+        speaker: _mean([turn.confidence or 0.0 for turn in raw_turns if turn.raw_speaker == speaker])
+        for speaker in speaker_map
+    }
+    warnings = list(dict.fromkeys(warning for turn in turns for warning in turn.warnings))
     return DiarizationResult(
         turns=_refine_turn_roles(turns, preserve_speakers=True),
         speaker_map=speaker_map,
         provider="pyannote.audio+stable-roles",
+        speaker_confidence=speaker_confidence,
+        warnings=warnings,
     )
 
 
@@ -488,5 +1028,58 @@ def diarize_text(text: str) -> DiarizationResult:
     sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
     if not sentences:
         sentences = [text.strip()] if text.strip() else []
-    turns = [TranscriptTurn(speaker=_guess_speaker_from_text(sentence, index), text=sentence) for index, sentence in enumerate(sentences)]
-    return DiarizationResult(turns=_merge_turns(turns), speaker_map={"SPEAKER_0": "Customer", "SPEAKER_1": "Agent"}, provider="heuristic-text")
+
+    use_llm = os.getenv("USE_LLM_DIARIZATION", os.getenv("USE_GROQ_WHISPER", "true")).lower() == "true"
+    if use_llm:
+        logger.info("Using LLM-based Diarization for raw text...")
+        fake_segments = [{"text": s, "start": float(i * 10), "end": float((i + 1) * 10)} for i, s in enumerate(sentences)]
+        llm_result = _llm_based_diarization(fake_segments)
+        if llm_result:
+            return llm_result
+        
+    # Heuristic text split: alternate Speaker_A and Speaker_B
+    raw_turns = []
+    for index, sentence in enumerate(sentences):
+        spk = "Speaker_A" if index % 2 == 0 else "Speaker_B"
+        raw_turns.append(TranscriptTurn(speaker=spk, raw_speaker=spk, text=sentence))
+        
+    # Classify speaker roles using hybrid classifier
+    from src.aspect_sentiment.role_classifier import classify_role_hybrid
+    from src.aspect_sentiment.flow_validator import validate_and_correct_roles
+    
+    speaker_texts = {}
+    for turn in raw_turns:
+        speaker_texts[turn.speaker] = speaker_texts.get(turn.speaker, "") + " " + turn.text
+    total_role_words = sum(len(text.split()) for text in speaker_texts.values())
+        
+    classifications = {}
+    for spk, txt in speaker_texts.items():
+        cleaned_text = txt.strip()
+        classifications[spk] = classify_role_hybrid(
+            spk,
+            cleaned_text,
+            speaker_word_count=len(cleaned_text.split()),
+            total_word_count=total_role_words,
+        )
+        
+    validator_turns = [{"speaker": t.speaker, "text": t.text} for t in raw_turns]
+    corrected = validate_and_correct_roles(validator_turns, classifications)
+    
+    speaker_map = {}
+    for spk, result in corrected.items():
+        speaker_map[spk] = result["role"]
+        
+    final_turns = []
+    for turn in raw_turns:
+        final_role = speaker_map.get(turn.speaker, "Customer")
+        final_turns.append(TranscriptTurn(
+            speaker=final_role,
+            raw_speaker=turn.speaker,
+            text=turn.text
+        ))
+        
+    return DiarizationResult(
+        turns=_merge_turns(final_turns),
+        speaker_map=speaker_map,
+        provider="hybrid-text-classifier"
+    )

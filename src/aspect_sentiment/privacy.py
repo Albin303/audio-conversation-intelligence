@@ -5,8 +5,6 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Iterable
 
-import spacy
-
 EMAIL_RX = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_RX = re.compile(r"(?:(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3,5}\)?[\s.-]?)?\d{3,5}[\s.-]?\d{4,6})")
 CUSTOMER_NAME_RX = re.compile(
@@ -65,6 +63,7 @@ class PrivacyResult:
 
 @lru_cache(maxsize=1)
 def load_privacy_nlp():
+    import spacy
     for model_name in ("en_core_web_sm", "en_core_web_md"):
         try:
             return spacy.load(model_name)

@@ -1,0 +1,10 @@
+-r base.txt
+click
+httpx
+pandas
+numpy
+scikit-learn
+joblib
+xgboost
+vaderSentiment
+spacy

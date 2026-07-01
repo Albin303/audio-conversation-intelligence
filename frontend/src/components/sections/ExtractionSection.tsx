@@ -1,22 +1,107 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { BrainCircuit, Activity, DollarSign, Target, AlertTriangle, Loader2, ShieldCheck, UserRound, MessagesSquare, Volume2, FileText, ListChecks, CheckCircle } from 'lucide-react';
+import { useRef, useEffect } from 'react';
+import Image from 'next/image';
+import { AlertTriangle, ArrowRight, BrainCircuit, Loader2, ShieldCheck, UserRound, Zap } from 'lucide-react';
+import { scrollToSection } from '@/config/navigation';
 import { useAppStore } from '@/store/useAppStore';
 import { apiService } from '@/services/api';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { InlineError } from '@/components/ui/InlineError';
+import { Reveal } from '@/components/ui/Reveal';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: i * 0.1,
-      duration: 0.5,
-      ease: "easeOut" as const
+function NeuralNetworkCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let width = (canvas.width = canvas.offsetWidth);
+    let height = (canvas.height = canvas.offsetHeight);
+
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = canvas.offsetWidth;
+      height = canvas.height = canvas.offsetHeight;
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    const particleCount = 45;
+    const particles: { x: number; y: number; vx: number; vy: number; radius: number }[] = [];
+
+    for (let i = 0; i < particleCount; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: (Math.random() - 0.5) * 0.7,
+        radius: Math.random() * 2 + 1.5,
+      });
     }
-  })
-};
+
+    const connectionDistance = 110;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw lines
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < particleCount; i++) {
+        const p1 = particles[i];
+        for (let j = i + 1; j < particleCount; j++) {
+          const p2 = particles[j];
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < connectionDistance) {
+            const alpha = (1 - dist / connectionDistance) * 0.65;
+            ctx.strokeStyle = `rgba(59, 130, 246, ${alpha})`;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw dots
+      for (let i = 0; i < particleCount; i++) {
+        const p = particles[i];
+        
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.vx = -p.vx;
+        if (p.y < 0 || p.y > height) p.vy = -p.vy;
+
+        ctx.fillStyle = '#3b82f6';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animationFrameId = requestAnimationFrame(draw);
+    };
+
+    animationFrameId = requestAnimationFrame(draw);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="w-full h-full" />;
+}
 
 export function ExtractionSection() {
   const { isExtracting, features, setPredicting, error, setError } = useAppStore();
@@ -25,320 +110,248 @@ export function ExtractionSection() {
     if (!features) return;
 
     setPredicting(true);
+    setError(null);
     try {
       const prediction = await apiService.predictConversion(features);
       useAppStore.getState().setPrediction(prediction);
       setPredicting(false);
-      document.getElementById('prediction')?.scrollIntoView({ behavior: 'smooth' });
-    } catch (err: any) {
+      scrollToSection('prediction');
+    } catch (err: unknown) {
       console.error(err);
       setPredicting(false);
-      setError(err?.message || 'Prediction failed. Check that XGBoost API is running.');
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Prediction failed. Check that XGBoost API is running.';
+      setError(message);
     }
   };
 
+  const showPredictError = error?.includes('Prediction failed');
+
   return (
-    <section id="extraction" className="min-h-screen py-24 px-8 relative max-w-6xl mx-auto">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-100px" }}
-        transition={{ duration: 0.6 }}
-        className="mb-16 text-center"
-      >
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-ai-purple/10 mb-6">
-          <BrainCircuit className="w-8 h-8 text-ai-purple" />
-        </div>
-        <h2 className="text-4xl md:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
-          Deep <span className="text-ai-purple">Feature Extraction</span>
-        </h2>
-        <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-          Our NLP models analyze the transcript to identify key linguistic patterns, emotional states, and buyer signals.
-        </p>
+    <section id="extraction" className="relative mx-auto max-w-6xl px-6 py-20 md:px-10 md:py-28">
+      <Reveal>
+        <SectionHeader
+          eyebrow="Extraction"
+          title="Conversation Insights"
+          description="Key signals, privacy redactions, and objections detected from the transcript."
+          align="center"
+        />
+      </Reveal>
 
-        {features && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 glass">
-            <span className="text-sm text-gray-500 font-medium">Extraction Engine:</span>
-            <span className={`text-sm font-bold flex items-center gap-1.5 ${features.extractionProvider === 'llama' ? 'text-ai-purple' : 'text-orange-500'}`}>
-              <div className={`w-2 h-2 rounded-full ${features.extractionProvider === 'llama' ? 'bg-ai-purple' : 'bg-orange-500'} animate-pulse`} />
-              {features.extractionProvider === 'llama' ? 'LLaMA 3 (Groq)' : 'Local Fallback'}
-            </span>
-          </motion.div>
-        )}
+      {features && (
+        <Reveal className="mb-8 flex justify-center" delay={0.04}>
+          <span className="inline-flex items-center gap-2 rounded-full border border-nexus-border bg-nexus-card px-4 py-1.5 text-xs font-medium text-nexus-muted">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                features.extractionProvider === 'llama' ? 'bg-nexus-secondary' : 'bg-amber-500'
+              }`}
+            />
+            {features.extractionProvider === 'llama' ? 'LLaMA 3 (Groq)' : 'Local fallback'}
+          </span>
+        </Reveal>
+      )}
 
-        {error && error.includes('Prediction failed') && (
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-500 text-sm mt-4 p-3 bg-red-500/10 rounded-xl inline-block">
-            {error}
-          </motion.p>
-        )}
-      </motion.div>
+      {showPredictError && (
+        <Reveal className="mb-6 flex justify-center">
+          <InlineError message={error!} onDismiss={() => setError(null)} />
+        </Reveal>
+      )}
 
       {isExtracting ? (
-        <div className="flex flex-col items-center justify-center h-64 gap-6">
-          <Loader2 className="w-12 h-12 text-ai-purple animate-spin" />
-          <p className="text-xl font-medium animate-pulse text-ai-purple">Extracting features with LLaMA 3...</p>
-        </div>
+        <Reveal delay={0.08}>
+          <Card className="flex h-64 flex-col items-center justify-center gap-4" padding="lg">
+            <Loader2 className="h-8 w-8 animate-spin text-nexus-secondary" />
+            <p className="text-sm font-medium text-nexus-fg">Extracting features…</p>
+          </Card>
+        </Reveal>
       ) : features ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Sentiment Score */}
-          <motion.div 
-            custom={0} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-ai-blue/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-150" />
-            <Activity className="w-8 h-8 text-ai-blue mb-4" />
-            <p className="text-sm text-gray-500 font-medium mb-1">Sentiment Evaluation</p>
-            <div className="flex items-end gap-2 mt-2">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{features.emotion}</h3>
-            </div>
-            {/* Progress Bar */}
-            <div className="w-full h-2 bg-gray-200 dark:bg-gray-800 rounded-full mt-4 overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }} 
-                animate={{ width: `${features.sentiment * 100}%` }} 
-                transition={{ duration: 1, delay: 0.5 }}
-                className="h-full bg-gradient-to-r from-ai-blue to-ai-cyan" 
-              />
-            </div>
-          </motion.div>
-
-          {/* Emotion */}
-          <motion.div 
-            custom={1} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-ai-purple/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-150" />
-            <Target className="w-8 h-8 text-ai-purple mb-4" />
-            <p className="text-sm text-gray-500 font-medium mb-1">Dominant Emotion</p>
-            <h3 className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{features.emotion}</h3>
-          </motion.div>
-
-          {/* Buying Intent */}
-          <motion.div 
-            custom={2} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-150" />
-            <DollarSign className="w-8 h-8 text-orange-500 mb-4" />
-            <p className="text-sm text-gray-500 font-medium mb-1">Buying Intent</p>
-            <h3 className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{features.buyingIntent}</h3>
-            {features.budgetDetected && (
-              <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 text-green-500 text-xs font-medium border border-green-500/20">
-                <CheckCircle className="w-3 h-3" /> Budget Mentioned
-              </div>
-            )}
-          </motion.div>
-
-          {/* Extracted Signals */}
-          <motion.div 
-            custom={3} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl lg:col-span-3 border-l-4 border-l-ai-cyan"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <BrainCircuit className="w-6 h-6 text-ai-cyan" />
-              <h3 className="text-xl font-semibold dark:text-white">Extracted Key Signals</h3>
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              {features.rawFeatures && features.rawFeatures.map((f, i) => (
-                <div key={i} className="px-4 py-2 rounded-lg bg-ai-cyan/10 border border-ai-cyan/20 flex flex-col">
-                  <span className="text-xs text-ai-cyan/70 uppercase tracking-wider font-bold mb-0.5">{f.label}</span>
-                  <span className="text-ai-cyan font-medium text-base capitalize">{f.name}</span>
+        <div className="space-y-6">
+          <Reveal delay={0.06}>
+            <Card padding="lg">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-nexus-border bg-nexus-bg text-nexus-accent">
+                  <BrainCircuit className="h-5 w-5" />
                 </div>
-              ))}
-              {(!features.rawFeatures || features.rawFeatures.length === 0) && (
-                <p className="text-gray-500">No specific products or budget signals detected.</p>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Conversation Summary */}
-          <motion.div
-            custom={4} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl lg:col-span-3 border-l-4 border-l-ai-blue"
-          >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
-              <div className="flex items-center gap-3">
-                <FileText className="w-6 h-6 text-ai-blue" />
-                <h3 className="text-xl font-semibold dark:text-white">Call Summary</h3>
-              </div>
-              {features.conversationSummary?.provider && (
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-ai-blue/10 border border-ai-blue/20 text-ai-blue text-xs font-bold w-fit">
-                  {features.conversationSummary.provider.startsWith('llama') ? 'LLaMA Summary' : 'Local Summary'}
-                  {typeof features.conversationSummary.confidence === 'number' && ` · ${Math.round(features.conversationSummary.confidence * 100)}%`}
-                </div>
-              )}
-            </div>
-
-            {features.conversationSummary ? (
-              <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-5">
                 <div>
-                  <p className="text-sm text-gray-500 font-medium mb-2">Overview</p>
-                  <p className="text-gray-800 dark:text-gray-100 leading-relaxed">{features.conversationSummary.overview}</p>
+                  <h3 className="text-sm font-semibold text-nexus-fg">Extracted Signals</h3>
+                  <p className="text-xs text-nexus-muted">Products, topics, and labels from LLaMA</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {features.rawFeatures?.length ? (
+                  features.rawFeatures.map((f, i) => (
+                    <div
+                      key={`${f.label}-${f.name}-${i}`}
+                      className="rounded-xl border border-nexus-border bg-nexus-bg/60 px-3.5 py-2"
+                    >
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-nexus-muted">
+                        {f.label}
+                      </span>
+                      <span className="text-sm font-medium capitalize text-nexus-fg">{f.name}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-nexus-muted">No labeled signals detected.</p>
+                )}
+              </div>
+            </Card>
+          </Reveal>
 
-                  <div className="grid md:grid-cols-2 gap-3 mt-5">
-                    <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-4">
-                      <span className="block text-xs uppercase font-bold tracking-wider text-gray-500 mb-1">Customer Need</span>
-                      <p className="text-sm text-gray-800 dark:text-gray-100">{features.conversationSummary.customerNeed}</p>
-                    </div>
-                    <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-4">
-                      <span className="block text-xs uppercase font-bold tracking-wider text-gray-500 mb-1">Outcome</span>
-                      <p className="text-sm text-gray-800 dark:text-gray-100">{features.conversationSummary.outcome}</p>
-                    </div>
+          <Reveal delay={0.1}>
+            <Card padding="lg">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-nexus-border bg-nexus-bg text-emerald-600">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-nexus-fg">Privacy Redaction</h3>
+                    <p className="text-xs text-nexus-muted">PII scrubbed before cloud inference</p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">
+                  {features.privacy?.redactionCount ?? 0} item
+                  {(features.privacy?.redactionCount ?? 0) === 1 ? '' : 's'} redacted
+                </span>
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
+                  <div className="mb-3 flex items-center gap-2">
+                    <UserRound className="h-4 w-4 text-nexus-muted" />
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-nexus-muted">
+                      Detected entities
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {features.privacy?.entities?.length ? (
+                      features.privacy.entities.map((entity, index) => (
+                        <div
+                          key={`${entity.type}-${index}`}
+                          className="rounded-lg border border-nexus-border bg-nexus-bg/50 px-3 py-2"
+                        >
+                          <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-nexus-muted">
+                            {entity.type.replaceAll('_', ' ')}
+                          </span>
+                          <span className="text-sm font-medium text-nexus-fg">{entity.value}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-nexus-muted">No sensitive entities detected.</p>
+                    )}
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <ListChecks className="w-4 h-4 text-ai-blue" />
-                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Key Points</p>
-                  </div>
-                  <div className="space-y-2">
-                    {features.conversationSummary.keyPoints.map((point, index) => (
-                      <div key={`${point}-${index}`} className="flex gap-2 rounded-xl bg-ai-blue/10 border border-ai-blue/20 p-3">
-                        <CheckCircle className="w-4 h-4 text-ai-blue mt-0.5 shrink-0" />
-                        <p className="text-sm text-gray-700 dark:text-gray-200">{point}</p>
+                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-nexus-muted">
+                    Behavioral signals
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Intent', value: features.customerBehaviorSummary?.intentSignals ?? 0 },
+                      { label: 'Hesitation', value: features.customerBehaviorSummary?.hesitationScore ?? 0 },
+                      { label: 'Urgency', value: features.customerBehaviorSummary?.urgencySignals ?? 0 },
+                      { label: 'Words', value: features.customerBehaviorSummary?.wordCount ?? 0 },
+                    ].map((metric) => (
+                      <div
+                        key={metric.label}
+                        className="rounded-xl border border-nexus-border bg-nexus-bg/50 p-3"
+                      >
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-nexus-muted">
+                          {metric.label}
+                        </span>
+                        <p className="mt-1 text-xl font-semibold text-nexus-fg">{metric.value}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 rounded-xl bg-green-500/10 border border-green-500/20 p-4">
-                    <span className="block text-xs uppercase font-bold tracking-wider text-green-500 mb-1">Next Action</span>
-                    <p className="text-sm text-gray-800 dark:text-gray-100">{features.conversationSummary.nextAction}</p>
-                  </div>
                 </div>
               </div>
-            ) : (
-              <p className="text-gray-500 text-sm">No summary generated yet.</p>
-            )}
-          </motion.div>
+            </Card>
+          </Reveal>
 
-          {/* Speaker classification and audio quality */}
-          <motion.div
-            custom={5} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl lg:col-span-3 border-l-4 border-l-ai-purple"
-          >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <MessagesSquare className="w-6 h-6 text-ai-purple" />
-                <h3 className="text-xl font-semibold dark:text-white">Speaker Classification</h3>
-              </div>
-              {features.audioQuality && (
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-ai-purple/10 border border-ai-purple/20 text-ai-purple text-xs font-bold w-fit">
-                  <Volume2 className="w-3.5 h-3.5" />
-                  Audio {features.audioQuality.label} · {Math.round(features.audioQuality.confidence * 100)}%
+          <Reveal delay={0.14}>
+            <Card padding="lg">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/5 text-red-500">
+                  <AlertTriangle className="h-5 w-5" />
                 </div>
-              )}
-            </div>
-            <div className="grid md:grid-cols-2 gap-3">
-              {features.diarizedTranscript?.length ? features.diarizedTranscript.slice(0, 6).map((turn, index) => {
-                const isCustomer = turn.speaker === 'Customer';
-                return (
-                  <div key={`${turn.speaker}-${index}`} className={`rounded-xl p-3 border ${isCustomer ? 'bg-ai-cyan/10 border-ai-cyan/20' : 'bg-ai-purple/10 border-ai-purple/20'}`}>
-                    <span className={`block text-[10px] uppercase font-bold tracking-wider mb-1 ${isCustomer ? 'text-ai-cyan' : 'text-ai-purple'}`}>
-                      {turn.speaker}
+                <div>
+                  <h3 className="text-sm font-semibold text-nexus-fg">Objections</h3>
+                  <p className="text-xs text-nexus-muted">Friction points raised in the conversation</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {features.objections.length > 0 ? (
+                  features.objections.map((obj, i) => (
+                    <span
+                      key={i}
+                      className="rounded-xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-sm text-red-600 dark:text-red-400"
+                    >
+                      {obj}
                     </span>
-                    <p className="text-sm text-gray-700 dark:text-gray-200 line-clamp-3">{turn.text}</p>
-                  </div>
-                );
-              }) : (
-                <p className="text-gray-500 text-sm">No speaker turns available yet.</p>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Privacy-safe customer profile */}
-          <motion.div
-            custom={6} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl lg:col-span-3 border-l-4 border-l-green-500"
-          >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="w-6 h-6 text-green-500" />
-                <h3 className="text-xl font-semibold dark:text-white">Privacy-Safe Local Extraction</h3>
+                  ))
+                ) : (
+                  <p className="text-sm text-nexus-muted">No objections detected.</p>
+                )}
               </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-bold w-fit">
-                {features.privacy?.redactionCount || 0} PII item{(features.privacy?.redactionCount || 0) === 1 ? '' : 's'} redacted before LLaMA
-              </div>
-            </div>
+            </Card>
+          </Reveal>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <UserRound className="w-4 h-4 text-green-500" />
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Structured Details</p>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {features.privacy?.entities?.length ? features.privacy.entities.map((entity, index) => (
-                    <div key={`${entity.type}-${index}`} className="px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
-                      <span className="block text-[10px] text-green-500/80 uppercase font-bold tracking-wider">{entity.type.replaceAll('_', ' ')}</span>
-                      <span className="text-sm text-green-600 dark:text-green-400 font-medium">{entity.value}</span>
-                    </div>
-                  )) : (
-                    <p className="text-gray-500 text-sm">No sensitive details detected locally.</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Customer Behavioral Summary</p>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-3">
-                    <span className="block text-gray-500">Intent Signals</span>
-                    <strong className="text-gray-900 dark:text-white">{features.customerBehaviorSummary?.intentSignals ?? 0}</strong>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-3">
-                    <span className="block text-gray-500">Hesitation</span>
-                    <strong className="text-gray-900 dark:text-white">{features.customerBehaviorSummary?.hesitationScore ?? 0}</strong>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-3">
-                    <span className="block text-gray-500">Urgency</span>
-                    <strong className="text-gray-900 dark:text-white">{features.customerBehaviorSummary?.urgencySignals ?? 0}</strong>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 dark:bg-gray-900/50 p-3">
-                    <span className="block text-gray-500">Customer Words</span>
-                    <strong className="text-gray-900 dark:text-white">{features.customerBehaviorSummary?.wordCount ?? 0}</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Objections */}
-          <motion.div 
-            custom={7} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}
-            className="glass-panel p-6 rounded-3xl lg:col-span-3 border-l-4 border-l-red-500"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle className="w-6 h-6 text-red-500" />
-              <h3 className="text-xl font-semibold dark:text-white">Detected Objections</h3>
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              {features.objections.map((obj, i) => (
-                <div key={i} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 font-medium text-sm">
-                  {obj}
-                </div>
-              ))}
-              {features.objections.length === 0 && (
-                <p className="text-gray-500">No major objections detected.</p>
-              )}
-            </div>
-          </motion.div>
-
-          <div className="lg:col-span-3 flex justify-center mt-8">
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-              onClick={handlePredict}
-              className="group relative inline-flex items-center justify-center px-10 py-4 font-bold text-white transition-all duration-200 bg-gradient-to-r from-ai-purple to-ai-blue border border-transparent rounded-full shadow-[0_0_40px_rgba(191,90,242,0.4)] hover:shadow-[0_0_60px_rgba(191,90,242,0.6)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ai-purple"
-            >
-              Run Prediction Model
-            </motion.button>
-          </div>
+          <Reveal delay={0.18} className="flex justify-center pt-4">
+            <Button size="lg" onClick={handlePredict} className="group">
+              <Zap className="h-4 w-4" />
+              Run Conversion Model
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </Button>
+          </Reveal>
         </div>
       ) : (
-        <div className="flex items-center justify-center h-64 glass-panel rounded-3xl border-dashed">
-          <p className="text-gray-500">Extract features from the conversation input to see results here.</p>
-        </div>
+        <Reveal delay={0.08}>
+          {/* Empty state: brain as animated 3D background */}
+          <div className="relative min-h-[420px] rounded-3xl overflow-hidden flex items-center justify-center">
+            {/* Neural Network Canvas with Blur */}
+            <div className="absolute inset-0 w-full h-full filter blur-[2px] opacity-[0.10] dark:opacity-[0.15] pointer-events-none -z-10">
+              <NeuralNetworkCanvas />
+            </div>
+
+            {/* Ghost Image of 3D brain */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none -z-10 opacity-[0.08]">
+              <Image
+                src="/extraction-3d.png"
+                alt="AI Semantic Brain Ghost"
+                width={380}
+                height={380}
+                className="select-none filter drop-shadow(0 0 40px rgba(96,165,250,0.2))"
+                priority
+              />
+            </div>
+
+            <div className="relative z-10 w-full max-w-md mx-auto px-4">
+              <Card
+                variant="outline"
+                className="flex flex-col items-center justify-center text-center p-10 bg-white/75 backdrop-blur-xl border-slate-200/80 dark:border-slate-700/50 dark:bg-slate-900/70 shadow-2xl"
+                padding="lg"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center mb-5">
+                  <BrainCircuit className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+                </div>
+                <p className="text-xl font-semibold text-slate-900 dark:text-white">Semantic Feature Extraction</p>
+                <p className="mt-3 max-w-sm text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Speech Intelligence and Intent Detection processes speech transcripts to identify purchase intent, client objections, PII privacy redactions, and customer behavior metrics.
+                </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  {['Intent Detection', 'PII Redaction', 'Objection Mining', 'Diarization'].map((tag) => (
+                    <span key={tag} className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[11px] font-semibold">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </Reveal>
       )}
     </section>
   );

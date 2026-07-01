@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, Square, Loader2, Activity, Radio, RadioTower } from 'lucide-react';
+import { Mic, Square, Loader2, Activity, Radio, RadioTower, CheckCircle, ArrowDown } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiService } from '@/services/api';
+import { scrollToSection } from '@/config/navigation';
 
 export function LiveStreamSection() {
-  const { 
-    recordingState, setRecordingState, 
+  const {
+    recordingState, setRecordingState,
     liveTranscript, setLiveTranscript,
     socketStatus, setSocketStatus,
     features,
@@ -168,7 +169,7 @@ export function LiveStreamSection() {
       setExtracting(false);
       setRecordingState('completed');
       stopInProgressRef.current = false;
-      document.getElementById('extraction')?.scrollIntoView({ behavior: 'smooth' });
+      scrollToSection('processing');
     } catch (err: any) {
       console.error(err);
       setExtracting(false);
@@ -181,34 +182,51 @@ export function LiveStreamSection() {
   const capturedSizeMb = (recordedBytes / (1024 * 1024)).toFixed(2);
 
   return (
-    <section id="live-stream" className="py-24 px-8 max-w-5xl mx-auto relative z-10">
+    <section id="live-stream" className="py-24 md:py-28 px-8 max-w-5xl mx-auto relative z-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
-        className="glass-panel p-8 md:p-12 rounded-3xl relative overflow-hidden"
+        viewport={{ once: true, margin: '-80px' }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+        className="surface-elevated p-8 md:p-12 relative overflow-hidden"
       >
-        <div className="absolute top-0 right-0 w-64 h-64 bg-ai-blue/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-              <Activity className="w-8 h-8 text-ai-blue" />
-              Live Browser Meeting Capture
-            </h2>
-            <p className="text-gray-500">
-              Capture meeting tab audio and your microphone, then analyze one finalized recording.
-            </p>
+        {/* Decorative blobs */}
+        <div className="absolute -top-20 -right-20 w-72 h-72 bg-ai-blue/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-ai-purple/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-6">
+          <div className="flex items-start gap-4">
+            <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-ai-blue to-ai-indigo flex items-center justify-center shadow-glow-blue shrink-0">
+              <Activity className="w-6 h-6 text-white" strokeWidth={2.4} />
+              <div className="absolute inset-0 rounded-2xl ring-1 ring-white/30" />
+            </div>
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1 tracking-tight">
+                Live Browser Meeting Capture
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md">
+                Capture meeting tab audio and your microphone, then analyze one finalized recording.
+              </p>
+            </div>
           </div>
-          
-          <div className="mt-6 md:mt-0 flex items-center gap-4">
-            <div className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full border ${
-              socketStatus === 'connected' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
-              'bg-gray-500/10 border-gray-500/20 text-gray-500'
-            }`}>
-              {socketStatus === 'connected' ? <RadioTower className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
-              {socketStatus === 'connected' ? 'Capturing' : 'Recorder idle'}
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div
+              className={`relative inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                socketStatus === 'connected'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-gray-500/10 border-gray-500/20 text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {socketStatus === 'connected' && (
+                <span className="absolute inset-0 rounded-full ring-2 ring-emerald-500/30 animate-ping" />
+              )}
+              {socketStatus === 'connected' ? (
+                <RadioTower className="w-3.5 h-3.5 relative" />
+              ) : (
+                <Radio className="w-3.5 h-3.5 relative" />
+              )}
+              <span className="relative">{socketStatus === 'connected' ? 'Capturing' : 'Recorder idle'}</span>
             </div>
 
             {recordingState === 'idle' || recordingState === 'completed' ? (
@@ -220,25 +238,31 @@ export function LiveStreamSection() {
                   }
                   startCapture();
                 }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-ai-blue text-white rounded-full font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-ai-blue/20"
+                className="group relative inline-flex items-center gap-2 px-6 py-3 text-white rounded-2xl font-semibold transition-all duration-300 ease-expo-out shadow-glow-blue hover:shadow-[0_0_50px_-5px_rgba(10,132,255,0.7)] hover:-translate-y-0.5 overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%)' }}
               >
-                <Mic className="w-5 h-5" />
+                <Mic className="w-4 h-4" />
                 {recordingState === 'completed' ? 'Start New Capture' : 'Start Capture'}
+                <span className="absolute inset-0 ring-1 ring-inset ring-white/20 rounded-2xl pointer-events-none" />
               </button>
             ) : recordingState === 'recording' ? (
               <button
                 onClick={stopCapture}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-full font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 animate-pulse"
+                className="group inline-flex items-center gap-2 px-6 py-3 text-white rounded-2xl font-semibold transition-all duration-300 ease-expo-out shadow-[0_0_30px_-5px_rgba(239,68,68,0.5)] hover:shadow-[0_0_50px_-5px_rgba(239,68,68,0.7)] hover:-translate-y-0.5"
+                style={{ background: 'linear-gradient(135deg, #ef4444 0%, #f43f5e 100%)' }}
               >
-                <Square className="w-5 h-5" />
+                <span className="relative flex items-center justify-center w-2 h-2">
+                  <span className="absolute inset-0 rounded-full bg-white animate-ping" />
+                  <Square className="w-3 h-3 fill-white relative" />
+                </span>
                 Stop Capture
               </button>
             ) : (
               <button
                 disabled
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-500 text-white rounded-full font-bold cursor-not-allowed opacity-70"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-500/20 text-gray-600 dark:text-gray-300 rounded-2xl font-semibold cursor-not-allowed"
               >
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 {recordingState === 'processing' ? 'Finalizing Audio...' : 'Transcribing & Analyzing...'}
               </button>
             )}
@@ -246,62 +270,113 @@ export function LiveStreamSection() {
         </div>
 
         {/* Live Transcript Area */}
-        <div className="relative rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 min-h-[300px] max-h-[400px] overflow-y-auto mb-6">
+        <div className="relative rounded-2xl bg-gradient-to-br from-gray-50/80 to-white/40 dark:from-gray-900/60 dark:to-gray-950/40 backdrop-blur border border-gray-200/70 dark:border-white/5 p-6 min-h-[300px] max-h-[400px] overflow-y-auto shadow-inner-highlight">
           {recordingState === 'recording' && (
-            <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-500/10 text-red-500 px-3 py-1 rounded-full text-xs font-bold border border-red-500/20">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-              RECORDING TAB AUDIO
+            <div className="sticky top-0 z-10 flex items-center justify-end mb-3 -mt-1">
+              <div className="inline-flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest shadow-[0_0_24px_-4px_rgba(239,68,68,0.6)]">
+                <span className="relative flex items-center justify-center w-1.5 h-1.5">
+                  <span className="absolute inset-0 rounded-full bg-white animate-ping" />
+                  <span className="relative w-1.5 h-1.5 rounded-full bg-white" />
+                </span>
+                RECORDING
+              </div>
             </div>
           )}
-          
-          {features?.diarizedTranscript?.length ? (
-            <div className="space-y-3">
-              {features.diarizedTranscript.map((turn, index) => {
-                const isCustomer = turn.speaker === 'Customer';
-                return (
-                  <div
-                    key={`${turn.speaker}-${index}`}
-                    className={`rounded-2xl border p-4 ${
-                      isCustomer
-                        ? 'bg-ai-cyan/10 border-ai-cyan/20'
-                        : 'bg-ai-purple/10 border-ai-purple/20'
-                    }`}
+
+          {recordingState === 'completed' ? (
+            <div className="h-full min-h-[260px] flex flex-col items-center justify-center gap-5 text-gray-400">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-emerald-500/20 blur-2xl animate-pulse" />
+                <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500/10 to-teal-500/10 flex items-center justify-center border border-emerald-500/30">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.4, ease: 'easeOut' }}
                   >
-                    <div className={`text-xs font-bold uppercase tracking-wider mb-2 ${isCustomer ? 'text-ai-cyan' : 'text-ai-purple'}`}>
-                      {turn.speaker}
-                    </div>
-                    <p className="text-gray-800 dark:text-gray-200 leading-relaxed font-medium">
-                      {turn.text}
-                    </p>
-                  </div>
-                );
-              })}
-              <div ref={transcriptEndRef} />
-            </div>
-          ) : liveTranscript ? (
-            <div className="space-y-4">
-              <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap font-medium">
-                {liveTranscript}
-              </p>
-              <div ref={transcriptEndRef} />
+                    <CheckCircle className="w-10 h-10 text-emerald-500" strokeWidth={1.8} />
+                  </motion.div>
+                </div>
+              </div>
+              <div className="text-center max-w-sm">
+                <p className="font-semibold text-slate-800 dark:text-white text-lg">Capture Complete & Analyzed!</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  The meeting audio has been successfully transcribed, diarized, and evaluated for business signals.
+                </p>
+              </div>
+              <button
+                onClick={() => scrollToSection('input')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-all duration-200 shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/35 hover:-translate-y-0.5"
+              >
+                View Transcript & Timeline
+                <ArrowDown className="w-4 h-4 animate-bounce" />
+              </button>
             </div>
           ) : recordingState === 'recording' ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500">
-              <Activity className="w-12 h-12 mb-4 text-ai-blue animate-pulse" />
-              <p className="font-medium text-gray-700 dark:text-gray-200">Capturing meeting audio locally</p>
-              <p className="text-sm mt-2">{capturedSizeMb} MB buffered from tab and microphone. Transcript appears after you stop recording.</p>
+            <div className="h-full min-h-[260px] flex flex-col items-center justify-center gap-4 text-gray-500">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-ai-blue/20 blur-2xl animate-pulse-glow" />
+                <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-ai-blue/20 to-ai-purple/20 flex items-center justify-center border border-ai-blue/30">
+                  <Activity className="w-9 h-9 text-ai-blue animate-pulse" strokeWidth={2.2} />
+                </div>
+              </div>
+              {/* Live waveform */}
+              <div className="flex items-end gap-1 h-8">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <motion.div
+                    key={i}
+                    animate={{ scaleY: [0.3, 1, 0.3] }}
+                    transition={{
+                      duration: 0.9,
+                      repeat: Infinity,
+                      delay: i * 0.05,
+                      ease: 'easeInOut',
+                    }}
+                    className="w-1 rounded-full bg-gradient-to-t from-ai-blue to-ai-purple origin-bottom"
+                    style={{ height: '100%' }}
+                  />
+                ))}
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-gray-700 dark:text-gray-200">Capturing meeting audio locally</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  <span className="font-mono font-semibold text-ai-blue">{capturedSizeMb} MB</span> buffered · Transcript appears after you stop recording.
+                </p>
+              </div>
             </div>
           ) : recordingState === 'processing' || recordingState === 'analyzing' ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500">
-              <Loader2 className="w-12 h-12 mb-4 text-ai-blue animate-spin" />
-              <p className="font-medium text-gray-700 dark:text-gray-200">
+            <div className="h-full min-h-[260px] flex flex-col items-center justify-center gap-4 text-gray-500">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-ai-purple/20 blur-2xl animate-pulse" />
+                <Loader2 className="relative w-10 h-10 text-ai-purple animate-spin" />
+              </div>
+              <p className="font-semibold text-gray-700 dark:text-gray-200">
                 {recordingState === 'processing' ? 'Finalizing one complete WebM file' : 'Running Whisper and sales intelligence'}
               </p>
+              <div className="flex items-center gap-1.5">
+                {[0, 1, 2].map((i) => (
+                  <motion.div
+                    key={i}
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                    className="w-1.5 h-1.5 rounded-full bg-ai-purple"
+                  />
+                ))}
+              </div>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <Mic className="w-12 h-12 mb-4 opacity-20" />
-              <p>Click Start Capture and select the browser tab containing your meeting.</p>
+            <div className="h-full min-h-[260px] flex flex-col items-center justify-center gap-4 text-gray-400">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-ai-blue/5 blur-2xl" />
+                <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-ai-blue/5 to-ai-purple/5 flex items-center justify-center border border-dashed border-ai-blue/30">
+                  <Mic className="w-8 h-8 text-ai-blue/50" strokeWidth={1.5} />
+                </div>
+              </div>
+              <div className="text-center max-w-xs">
+                <p className="font-semibold text-gray-700 dark:text-gray-200">Ready to capture</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Click <span className="font-semibold text-ai-blue">Start Capture</span> and select the browser tab containing your meeting.
+                </p>
+              </div>
             </div>
           )}
         </div>

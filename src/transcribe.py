@@ -19,8 +19,6 @@ import datetime as dt
 from pathlib import Path
 from typing import Iterable, List, Set
 
-import whisper
-
 
 def list_audio_files(folder: Path) -> List[Path]:
     """Return sorted audio files with common extensions."""
@@ -136,6 +134,8 @@ def main() -> None:
     write_header_if_needed(output_csv, fields)
 
     seen = set() if args.overwrite else load_seen_files(output_csv)
+    import whisper
+
     model = whisper.load_model(args.model_size, device=device)
 
     with output_csv.open("a", newline="", encoding="utf-8") as f:

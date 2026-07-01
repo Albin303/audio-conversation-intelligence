@@ -3,7 +3,7 @@ import time
 import requests
 from pathlib import Path
 
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = "http://localhost:7860"
 
 def test_health():
     print("\n1. Testing Backend API Health Check...")
@@ -118,7 +118,7 @@ def test_audio_upload():
 
 if __name__ == "__main__":
     print("==================================================")
-    print("      Nexus AI - API Integration Test Suite       ")
+    print("      Speech Intelligence and Intent Detection - API Integration Test Suite       ")
     print("==================================================")
     
     success = True

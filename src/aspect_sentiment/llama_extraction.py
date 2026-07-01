@@ -1,13 +1,14 @@
 import json
 import os
+import hashlib
 import httpx
 import asyncio
 from pathlib import Path
+from typing import Any
+
 
 from dotenv import load_dotenv
 import re
-
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # ================================
 # CONFIG
@@ -20,8 +21,6 @@ MODEL = os.getenv("LLAMA_MODEL", "llama-3.3-70b-versatile")
 BASE_URL = os.getenv("LLAMA_API_URL", "https://api.groq.com/openai/v1")
 BASE_URL = BASE_URL.removesuffix("/chat/completions").rstrip("/")
 CHAT_COMPLETIONS_URL = f"{BASE_URL}/chat/completions"
-
-sentiment_analyzer = SentimentIntensityAnalyzer()
 
 BRAND_TERMS = [
     "samsung",
@@ -67,6 +66,13 @@ ENUM_LABELS = {
     "BRAND_LOYALTY",
     "FOLLOW_UP_PROBABILITY",
     "EMOTIONAL_CONFIDENCE",
+    "COMPETITOR",
+    "DECISION_MAKER",
+    "ESCALATION_REQUEST",
+    "FOLLOW_UP_REQUEST",
+    "DELAY_SIGNAL",
+    "PRICE_DISCUSSION",
+    "BUDGET_DISCUSSION",
 }
 ENUM_EVIDENCE = {
     "INTENT": ("buy", "purchase", "want", "need", "interested", "looking for"),
@@ -77,6 +83,13 @@ ENUM_EVIDENCE = {
     "BRAND_LOYALTY": ("brand", "prefer", "always use", "loyal"),
     "FOLLOW_UP_PROBABILITY": ("follow up", "call back", "get back", "later", "contact"),
     "EMOTIONAL_CONFIDENCE": ("sure", "definitely", "maybe", "not sure", "confident"),
+    "COMPETITOR": ("apple", "samsung", "oneplus", "dell", "hp", "lenovo", "acer", "asus", "macbook", "brand", "vs", "compare"),
+    "DECISION_MAKER": ("boss", "father", "spouse", "wife", "husband", "myself", "partner", "manager", "decision"),
+    "ESCALATION_REQUEST": ("manager", "supervisor", "escalate", "higher up", "talk to"),
+    "FOLLOW_UP_REQUEST": ("call", "email", "get back", "send", "brochure", "details"),
+    "DELAY_SIGNAL": ("later", "next week", "postpone", "after", "next month", "think"),
+    "PRICE_DISCUSSION": ("price", "cost", "discount", "emi", "installment", "charge", "rupees", "inr", "₹"),
+    "BUDGET_DISCUSSION": ("budget", "limit", "max", "under", "within", "around"),
 }
 
 
@@ -138,12 +151,29 @@ def rule_based_features(text):
     return features
 
 
+CACHE_DIR = PROJECT_ROOT / "data" / "cache" / "llama"
+
 async def call_llama(messages):
     api_key = os.getenv("LLAMA_API_KEY")
     if not api_key:
         raise ValueError(
             f"Set LLAMA_API_KEY in your environment or in {PROJECT_ROOT / '.env.local'}"
         )
+
+    # Serialize messages to generate a stable cache key
+    serialized = json.dumps(messages, sort_keys=True)
+    cache_key = hashlib.md5(serialized.encode("utf-8")).hexdigest()
+    
+    # Ensure cache directory exists
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    
+    # Check disk cache
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
 
     payload = {
         "model": MODEL,
@@ -163,7 +193,15 @@ async def call_llama(messages):
         try:
             response = await client.post(CHAT_COMPLETIONS_URL, json=payload, headers=headers, timeout=90.0)
             response.raise_for_status()
-            return response.json()
+            res_json = response.json()
+            
+            # Write to disk cache
+            try:
+                cache_file.write_text(json.dumps(res_json), encoding="utf-8")
+            except Exception:
+                pass
+                
+            return res_json
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text
             raise RuntimeError(f"Groq API HTTP {exc.response.status_code}: {detail}") from exc
@@ -188,7 +226,7 @@ Return JSON:
   "features": [
     {{
       "value": "Exact semantic value (e.g., 'RTX 4050', '85000', 'Considering')",
-      "label": "PRODUCT|BRAND|BUDGET|FEATURE|INTENT|URGENCY|DECISION_STAGE|USE_CASE|OBJECTION|URGENCY_LEVEL|OBJECTION_TYPE|PRICE_SENSITIVITY|BRAND_LOYALTY|FOLLOW_UP_PROBABILITY|EMOTIONAL_CONFIDENCE"
+      "label": "PRODUCT|BRAND|BUDGET|FEATURE|INTENT|URGENCY|DECISION_STAGE|USE_CASE|OBJECTION|URGENCY_LEVEL|OBJECTION_TYPE|PRICE_SENSITIVITY|BRAND_LOYALTY|FOLLOW_UP_PROBABILITY|EMOTIONAL_CONFIDENCE|COMPETITOR|DECISION_MAKER|ESCALATION_REQUEST|FOLLOW_UP_REQUEST|DELAY_SIGNAL|PRICE_DISCUSSION|BUDGET_DISCUSSION"
     }}
   ]
 }}
@@ -200,6 +238,13 @@ CRITICAL RULES:
 - For INTENT, strictly use one of: Low Interest, Curious, Warm Lead, Interested, High Interest, Strong Buying Intent, Comparison Shopper, Price Sensitive, Hesitant Buyer, Ready to Purchase.
 - For OBJECTION, extract explicit reasons for hesitation (e.g., "too expensive", "no EMI").
 - For other customer signals like URGENCY_LEVEL, OBJECTION_TYPE, PRICE_SENSITIVITY, BRAND_LOYALTY, FOLLOW_UP_PROBABILITY, EMOTIONAL_CONFIDENCE, provide concise descriptive values.
+- For COMPETITOR, extract competitor brands mentioned (e.g., "HP", "Lenovo", "Dell", "MacBook").
+- For DECISION_MAKER, extract who makes the decision (e.g., "self", "father", "spouse", "boss").
+- For ESCALATION_REQUEST, extract if the customer requests a manager or escalation (e.g., "wants manager", "escalation requested").
+- For FOLLOW_UP_REQUEST, extract follow-up request details (e.g., "call tomorrow", "email brochure").
+- For DELAY_SIGNAL, extract reasons for delay or post-ponement (e.g., "decide after holiday", "next week").
+- For PRICE_DISCUSSION, extract terms related to price talk (e.g., "discount inquiry", "emi options pricing").
+- For BUDGET_DISCUSSION, extract terms related to budget limits (e.g., "under 50k", "strict budget").
 - If not relevant → return empty list.
 
 Input:
@@ -215,6 +260,12 @@ Summarize this sales call or customer conversation for a CRM dashboard.
 
 Return JSON:
 {{
+  "Conversation Summary": "2-3 sentence overview of the conversation and customer interests",
+  "Key Moments": ["list of key events or turn points in the call"],
+  "Important Quotes": ["2-3 significant direct or indirect quotes showing intent/objection"],
+  "Action Items": ["list of next steps for the agent"],
+  "Risks": ["list of any potential risks, objections, or reasons the deal might drop"],
+  "Recommendations": ["list of recommendations to move the lead forward"],
   "overview": "2 sentence plain-English summary of what happened",
   "customerNeed": "main customer requirement or interest",
   "keyPoints": ["3 to 5 important facts, preferences, objections, offers, or decisions"],
@@ -380,8 +431,14 @@ def merge_rule_features(llama_features, text):
 # SENTIMENT
 # ================================
 
+_sentiment_analyzer = None
+
 def get_sentiment(text):
-    return sentiment_analyzer.polarity_scores(text)["compound"]
+    global _sentiment_analyzer
+    if _sentiment_analyzer is None:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        _sentiment_analyzer = SentimentIntensityAnalyzer()
+    return _sentiment_analyzer.polarity_scores(text)["compound"]
 
 # ================================
 # FEATURE ENGINEERING
@@ -515,8 +572,30 @@ def _fallback_summary(transcript: str, customer_text: str = "", agent_text: str 
     outcome = "Follow-up required" if any(term in lower for term in ["later", "get back", "think about"]) else "Conversation analyzed"
     next_action = "Follow up with the customer and address the main requirement or objection."
 
+    overview = source[:220] + ("..." if len(source) > 220 else "") if source else "No conversation text was available to summarize."
+
+    # Phase 3: New summary fields fallback
+    conv_summary = overview
+    key_moments = key_points
+    important_quotes = [
+        f'"{sentence.strip()}"'
+        for sentence in re.split(r"[.!?]", source)
+        if any(term in sentence.lower() for term in ["buy", "need", "want", "budget", "expensive"])
+    ][:2]
+    action_items = [next_action]
+    risks = []
+    if any(term in lower for term in ["expensive", "costly", "not sure", "think about it"]):
+        risks.append("Price sensitivity or buyer hesitation detected.")
+    recommendations = ["Address any objections regarding price or features and present EMI/financing options if available."]
+
     return {
-        "overview": source[:220] + ("..." if len(source) > 220 else "") if source else "No conversation text was available to summarize.",
+        "Conversation Summary": conv_summary,
+        "Key Moments": key_moments,
+        "Important Quotes": important_quotes,
+        "Action Items": action_items,
+        "Risks": risks,
+        "Recommendations": recommendations,
+        "overview": overview,
         "customerNeed": need,
         "keyPoints": key_points[:5],
         "outcome": outcome,
@@ -541,7 +620,7 @@ async def summarize_conversation(transcript: str, customer_text: str = "", agent
         content = response["choices"][0]["message"]["content"]
         data = json.loads(content)
 
-        key_points = data.get("keyPoints", [])
+        key_points = data.get("keyPoints", data.get("Key Moments", []))
         if not isinstance(key_points, list):
             key_points = [str(key_points)]
 
@@ -552,7 +631,14 @@ async def summarize_conversation(transcript: str, customer_text: str = "", agent
             confidence = 0.7
 
         return {
-            "overview": str(data.get("overview") or "").strip() or "Summary was generated, but no overview was returned.",
+            "Conversation Summary": str(data.get("Conversation Summary") or data.get("overview") or "").strip(),
+            "Key Moments": [str(item).strip() for item in data.get("Key Moments", key_points) if str(item).strip()][:5],
+            "Important Quotes": [str(item).strip() for item in data.get("Important Quotes", []) if str(item).strip()][:5],
+            "Action Items": [str(item).strip() for item in data.get("Action Items", [data.get("nextAction")]) if str(item).strip()][:5],
+            "Risks": [str(item).strip() for item in data.get("Risks", []) if str(item).strip()][:5],
+            "Recommendations": [str(item).strip() for item in data.get("Recommendations", []) if str(item).strip()][:5],
+            # Keep original keys for backward compatibility
+            "overview": str(data.get("overview") or data.get("Conversation Summary") or "").strip() or "Summary was generated, but no overview was returned.",
             "customerNeed": str(data.get("customerNeed") or "").strip() or "Customer requirement is not clear from the conversation.",
             "keyPoints": [str(item).strip() for item in key_points if str(item).strip()][:5],
             "outcome": str(data.get("outcome") or "").strip() or "Outcome not clearly stated.",
@@ -563,6 +649,140 @@ async def summarize_conversation(transcript: str, customer_text: str = "", agent
     except Exception as e:
         print("Summary API Error:", e)
         return _fallback_summary(clean_transcript, customer_text, agent_text)
+
+
+def detect_conversation_stages(turns: list[Any]) -> list[dict[str, Any]]:
+    """
+    Detects the stage of each segment of the conversation.
+    Stages: Opening -> Discovery -> Pricing -> Negotiation -> Closing
+    Uses phrase triggers and position-based structural context.
+    """
+    if not turns:
+        return []
+
+    # 1. Define phrase patterns for each stage
+    stage_patterns = {
+        "Opening": re.compile(
+            r"\b(hello|hi|hey|morning|afternoon|evening|welcome|this is|calling from|how can i help|how may i help|how assist)\b",
+            re.IGNORECASE,
+        ),
+        "Discovery": re.compile(
+            r"\b(looking for|need|want|interested|budget|brand|preference|requirement|use case|programming|gaming|features|specifications|specs|models|suggest)\b",
+            re.IGNORECASE,
+        ),
+        "Pricing": re.compile(
+            r"\b(price|cost|how much|charges|emi|installment|discounts?|offers?|rupees|inr|₹|finance|rate|monthly)\b",
+            re.IGNORECASE,
+        ),
+        "Negotiation": re.compile(
+            r"\b(expensive|costly|high|budget limit|not sure|thinking|maybe later|get back|think about|competitor|dell|hp|lenovo|samsung|macbook|compare|but|reason|objection)\b",
+            re.IGNORECASE,
+        ),
+        "Closing": re.compile(
+            r"\b(thank you|thanks|bye|goodbye|have a nice day|follow up|share details|send email|contact details|call back)\b",
+            re.IGNORECASE,
+        ),
+    }
+
+    num_turns = len(turns)
+    turn_stages = []
+
+    for idx, turn in enumerate(turns):
+        text = getattr(turn, "text", "") if not isinstance(turn, dict) else turn.get("text", "")
+        text_lower = text.lower()
+
+        # Calculate keyword match score for each stage
+        scores = {stage: len(pattern.findall(text_lower)) for stage, pattern in stage_patterns.items()}
+
+        # Incorporate positional/structural bias
+        rel_pos = idx / max(num_turns - 1, 1)
+
+        if rel_pos <= 0.2:
+            scores["Opening"] += 2.0
+            scores["Discovery"] += 0.5
+        elif rel_pos <= 0.5:
+            scores["Discovery"] += 2.0
+            scores["Pricing"] += 0.5
+            scores["Opening"] += 0.2
+        elif rel_pos <= 0.75:
+            scores["Pricing"] += 2.0
+            scores["Negotiation"] += 1.0
+            scores["Discovery"] += 0.5
+        elif rel_pos <= 0.9:
+            scores["Negotiation"] += 2.0
+            scores["Pricing"] += 0.5
+            scores["Closing"] += 0.5
+        else:
+            scores["Closing"] += 2.0
+            scores["Negotiation"] += 0.5
+
+        # Select stage with the highest score
+        detected_stage = max(scores, key=scores.get)
+        turn_stages.append(detected_stage)
+
+    # 2. Smooth the stages to form contiguous segments (avoid too much jumping)
+    smoothed_stages = list(turn_stages)
+    for idx in range(1, num_turns - 1):
+        if turn_stages[idx - 1] == turn_stages[idx + 1] and turn_stages[idx] != turn_stages[idx - 1]:
+            smoothed_stages[idx] = turn_stages[idx - 1]
+
+    # Ensure monotonic or logical flow alignment (avoid random jump back to Opening late in the call)
+    for idx in range(num_turns):
+        rel_pos = idx / max(num_turns - 1, 1)
+        if rel_pos > 0.7 and smoothed_stages[idx] in ["Opening", "Discovery"]:
+            smoothed_stages[idx] = "Negotiation" if rel_pos <= 0.9 else "Closing"
+
+    # 3. Group turns into segments
+    segments = []
+    if num_turns == 0:
+        return segments
+
+    current_stage = smoothed_stages[0]
+    start_idx = 0
+    start_time = getattr(turns[0], "start", 0.0) if not isinstance(turns[0], dict) else turns[0].get("start", 0.0)
+    if start_time is None:
+        start_time = 0.0
+
+    for idx in range(1, num_turns):
+        stage = smoothed_stages[idx]
+        if stage != current_stage:
+            prev_end = getattr(turns[idx - 1], "end", None) if not isinstance(turns[idx - 1], dict) else turns[idx - 1].get("end", None)
+            end_time = prev_end if prev_end is not None else (start_time + 1.0)
+            
+            segment_turns = turns[start_idx:idx]
+            conf = sum(getattr(t, "confidence", 0.8) or 0.8 if not isinstance(t, dict) else t.get("confidence", 0.8) or 0.8 for t in segment_turns) / len(segment_turns)
+
+            segments.append({
+                "stage": current_stage,
+                "startIndex": start_idx,
+                "endIndex": idx - 1,
+                "startTime": start_time,
+                "endTime": end_time,
+                "confidence": round(conf, 2)
+            })
+            
+            current_stage = stage
+            start_idx = idx
+            next_start = getattr(turns[idx], "start", None) if not isinstance(turns[idx], dict) else turns[idx].get("start", None)
+            start_time = next_start if next_start is not None else end_time
+
+    # Add the final segment
+    last_end = getattr(turns[-1], "end", None) if not isinstance(turns[-1], dict) else turns[-1].get("end", None)
+    end_time = last_end if last_end is not None else (start_time + 1.0)
+    
+    segment_turns = turns[start_idx:]
+    conf = sum(getattr(t, "confidence", 0.8) or 0.8 if not isinstance(t, dict) else t.get("confidence", 0.8) or 0.8 for t in segment_turns) / len(segment_turns)
+    segments.append({
+        "stage": current_stage,
+        "startIndex": start_idx,
+        "endIndex": num_turns - 1,
+        "startTime": start_time,
+        "endTime": end_time,
+        "confidence": round(conf, 2)
+    })
+
+    return segments
+
 
 # ================================
 # TEST

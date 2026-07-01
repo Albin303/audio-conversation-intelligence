@@ -1,118 +1,229 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { 
-  Home, 
-  UploadCloud, 
-  MessageSquare, 
-  BrainCircuit, 
-  LineChart, 
-  Bell,
-  Settings 
-} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { NAV_ITEMS, scrollToSection } from '@/config/navigation';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { useSidebar } from '@/providers/SidebarContext';
 
-const navItems = [
-  { id: 'hero', label: 'Home', icon: Home },
-  { id: 'upload', label: 'Upload Audio', icon: UploadCloud },
-  { id: 'input', label: 'Conversation', icon: MessageSquare },
-  { id: 'extraction', label: 'Feature Extraction', icon: BrainCircuit },
-  { id: 'prediction', label: 'Prediction', icon: LineChart },
-  { id: 'follow-up-alerts', label: 'Follow-Up Alerts', icon: Bell },
-  { id: 'settings', label: 'Settings', icon: Settings },
+const STAT_CARDS = [
+  {
+    icon: '🎙️',
+    title: 'Whisper ASR',
+    value: '99.2%',
+    sub: 'Transcription accuracy',
+    accent: 'from-blue-500/20 to-blue-500/5',
+    dot: 'bg-blue-500',
+  },
+  {
+    icon: '👥',
+    title: 'Speaker ID',
+    value: 'Auto',
+    sub: 'Agent & customer split',
+    accent: 'from-violet-500/20 to-violet-500/5',
+    dot: 'bg-violet-500',
+  },
+  {
+    icon: '⚡',
+    title: 'Low Latency',
+    value: '< 2s',
+    sub: 'Real-time pipeline',
+    accent: 'from-emerald-500/20 to-emerald-500/5',
+    dot: 'bg-emerald-500',
+  },
 ];
 
 export function Sidebar() {
+  const { collapsed, toggle } = useSidebar();
   const [activeSection, setActiveSection] = useState('hero');
+  const [cardIndex, setCardIndex] = useState(0);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
-      const sections = navItems.map(item => document.getElementById(item.id));
       const scrollPosition = window.scrollY + window.innerHeight / 3;
-
-      for (const section of sections) {
+      for (const item of NAV_ITEMS) {
+        const section = document.getElementById(item.id);
         if (
-          section && 
-          section.offsetTop <= scrollPosition && 
-          (section.offsetTop + section.offsetHeight) > scrollPosition
+          section &&
+          section.offsetTop <= scrollPosition &&
+          section.offsetTop + section.offsetHeight > scrollPosition
         ) {
-          setActiveSection(section.id);
+          setActiveSection(item.id);
         }
       }
     };
 
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      window.scrollTo({
-        top: element.offsetTop,
-        behavior: 'smooth',
-      });
-      setActiveSection(id);
-    }
-  };
+  // Auto-cycle cards every 3 seconds
+  useEffect(() => {
+    if (collapsed) return;
+    const timer = setInterval(() => {
+      setCardIndex((prev) => (prev + 1) % STAT_CARDS.length);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [collapsed]);
+
+  const card = STAT_CARDS[cardIndex];
 
   return (
-    <motion.aside 
-      initial={{ x: -100, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed left-0 top-0 h-screen w-64 glass-panel z-50 flex flex-col justify-between py-8 px-4"
+    <motion.aside
+      initial={{ x: -24, opacity: 0, width: collapsed ? 80 : 256 }}
+      animate={{ x: 0, opacity: 1, width: collapsed ? 80 : 256 }}
+      transition={{ 
+        width: { duration: 0.3, ease: [0.16, 1, 0.3, 1] }, 
+        default: { duration: 0.6, ease: [0.16, 1, 0.3, 1] } 
+      }}
+      className="fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-nexus-border bg-nexus-bg/80 px-4 py-6 backdrop-blur-xl lg:flex overflow-hidden"
     >
-      <div>
-        <div className="flex items-center gap-3 px-4 mb-12">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ai-blue to-ai-cyan flex items-center justify-center shadow-lg shadow-ai-blue/30">
-            <BrainCircuit className="text-white w-6 h-6" />
+      <div className={cn("mb-6 flex items-center px-2 shrink-0", collapsed ? "flex-col gap-4" : "justify-between gap-3")}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nexus-accent text-sm font-bold text-white shadow-soft">
+            S
           </div>
-          <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
-            Nexus AI
-          </span>
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="text-xs font-semibold tracking-tight text-nexus-fg leading-snug break-words max-w-[150px]">
+                Speech Intelligence and Intent Detection
+              </div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-nexus-muted">
+                Audio Intelligence
+              </div>
+            </div>
+          )}
         </div>
+        
+        {/* Toggle Button */}
+        <button
+          type="button"
+          onClick={toggle}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-nexus-border text-nexus-muted hover:text-nexus-fg hover:bg-nexus-card transition-colors duration-200"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <span className="text-xs font-mono font-bold leading-none">&gt;|</span>
+          ) : (
+            <span className="text-xs font-mono font-bold leading-none">&lt;|</span>
+          )}
+        </button>
+      </div>
 
-        <nav className="flex flex-col gap-2">
-          {navItems.map((item) => {
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {!collapsed && (
+          <p className="mb-3 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-nexus-muted shrink-0">
+            Navigation
+          </p>
+        )}
+
+        <nav className="no-scrollbar flex flex-1 flex-col gap-1 overflow-y-auto pr-1">
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
-            
+
             return (
               <button
                 key={item.id}
-                onClick={() => scrollToSection(item.id)}
+                type="button"
+                onClick={() => {
+                  scrollToSection(item.id);
+                  setActiveSection(item.id);
+                }}
+                onMouseEnter={() => collapsed && setHoveredItem(item.id)}
+                onMouseLeave={() => setHoveredItem(null)}
                 className={cn(
-                  "relative flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-300 group",
-                  isActive 
-                    ? "text-ai-blue dark:text-white" 
-                    : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                  'group relative flex items-center rounded-xl transition-all duration-200 ease-in-out',
+                  collapsed ? 'justify-center h-10 w-10 mx-auto px-0' : 'px-3 py-2.5 gap-3 w-full',
+                  isActive
+                    ? 'bg-nexus-accent/10 text-nexus-accent font-semibold'
+                    : 'text-nexus-muted hover:bg-nexus-card hover:text-nexus-fg',
                 )}
+                style={{
+                  boxShadow: isActive ? 'inset 3px 0px 0px rgb(var(--nexus-accent))' : undefined
+                }}
               >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTab"
-                    className="absolute inset-0 bg-ai-blue/10 dark:bg-white/10 rounded-lg shadow-sm border border-ai-blue/20 dark:border-white/10"
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                  />
+                <Icon 
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200 ease-in-out shrink-0",
+                    isActive ? "rotate-[5deg]" : "group-hover:scale-[1.02]"
+                  )} 
+                  strokeWidth={isActive ? 2.4 : 2} 
+                />
+                {!collapsed && <span className="flex-1 text-left truncate">{item.label}</span>}
+                {!collapsed && isActive && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-nexus-accent" />
                 )}
-                <Icon className={cn("w-5 h-5 relative z-10 transition-colors", isActive ? "text-ai-blue dark:text-white" : "group-hover:text-ai-blue dark:group-hover:text-white")} />
-                <span className="relative z-10">{item.label}</span>
+
+                {/* Tooltip on hover when collapsed */}
+                {collapsed && hoveredItem === item.id && (
+                  <div className="absolute left-16 z-50 rounded-lg bg-slate-900 dark:bg-slate-950 px-3 py-1.5 text-xs text-white border border-nexus-border shadow-lg pointer-events-none whitespace-nowrap animate-scale-in">
+                    {item.label}
+                  </div>
+                )}
               </button>
             );
           })}
         </nav>
       </div>
 
-      <div className="px-4">
-        <div className="p-4 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border border-gray-200 dark:border-gray-800">
-          <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">System Status</p>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-sm font-medium text-gray-900 dark:text-gray-200">All systems operational</span>
-          </div>
-        </div>
+      <div className="mt-4 space-y-3 px-1 shrink-0">
+        <ThemeToggle className="w-full justify-center" compact={collapsed} />
+
+        {!collapsed && (
+          <>
+            {/* Auto-sliding feature stat card */}
+            <div className="relative overflow-hidden rounded-2xl border border-nexus-border bg-nexus-card h-[90px]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={cardIndex}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -16 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className={`absolute inset-0 bg-gradient-to-br ${card.accent} p-4 flex flex-col justify-between`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-base leading-none">{card.icon}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-nexus-muted">{card.title}</span>
+                    <div className={`h-2 w-2 rounded-full ${card.dot} animate-pulse`} />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-nexus-fg">{card.value}</p>
+                    <p className="text-[11px] text-nexus-muted mt-0.5">{card.sub}</p>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Dot indicators */}
+              <div className="absolute bottom-2 right-3 flex gap-1">
+                {STAT_CARDS.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCardIndex(i)}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all duration-300',
+                      i === cardIndex ? 'w-4 bg-nexus-accent' : 'w-1.5 bg-nexus-border',
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-nexus-border bg-nexus-card p-4 animate-scale-in">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-nexus-muted">
+                Platform
+              </p>
+              <p className="mt-2 text-sm font-medium text-nexus-fg">Enterprise audio pipeline</p>
+              <p className="mt-1 text-xs leading-relaxed text-nexus-muted">
+                Whisper · LLaMA · XGBoost
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </motion.aside>
   );

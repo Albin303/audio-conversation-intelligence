@@ -255,7 +255,11 @@ export const apiService = {
     }
 
     let jobData = response.data;
-    while (jobData.status === 'pending' || jobData.status === 'processing') {
+    while (
+      jobData.status === 'pending' ||
+      jobData.status === 'processing' ||
+      jobData.status === 'awaiting_ml'
+    ) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       const jobRes = await apiClient.get(`/jobs/${jobId}`);
       jobData = jobRes.data;
@@ -274,13 +278,35 @@ export const apiService = {
     };
   },
 
-  extractFeatures: async (transcription: string) => {
-    const response = await apiClient.post('/analyze', { text: transcription }, {
+  extractFeatures: async (transcription: string, diarizedTranscript?: any[]) => {
+    const response = await apiClient.post('/analyze', {
+      text: transcription,
+      diarizedTranscript,
+    }, {
       // @ts-ignore
       retry: 1,
       retryDelay: 2000,
     });
-    const analysis = response.data as BackendAnalysis;
+    const jobId = response.data.job_id;
+    let analysis: BackendAnalysis;
+
+    if (jobId) {
+      let jobData = response.data;
+      while (jobData.status === 'pending' || jobData.status === 'processing' || jobData.status === 'awaiting_ml') {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const jobRes = await apiClient.get(`/jobs/${jobId}`);
+        jobData = jobRes.data;
+      }
+
+      if (jobData.status === 'failed') {
+        throw new Error(jobData.error || 'Background feature extraction failed');
+      }
+
+      analysis = jobData.result as BackendAnalysis;
+    } else {
+      analysis = response.data as BackendAnalysis;
+    }
+
     return {
       analysis,
       transcription: analysis.transcript,

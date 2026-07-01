@@ -1,0 +1,10 @@
+-r base.txt
+numpy
+requests
+openai-whisper
+# Install CPU-only PyTorch wheel to avoid pulling NVIDIA/CUDA wheels
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.12.1+cpu
+pyannote.audio
+speechbrain
+hyperpyyaml

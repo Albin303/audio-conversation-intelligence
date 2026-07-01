@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HALLUCINATION_TEXTS = {"thank you", "thanks for watching", "subscribe", "you"}
+FILLER_RX = re.compile(r"\b(um+|uh+|erm+|hmm+)\b", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -84,11 +85,24 @@ class WhisperTranscriber:
         return round(float(segments[-1].get("end", 0.0) or 0.0), 2)
 
     @staticmethod
+    def _dedupe_repeated_words(text: str) -> str:
+        words = text.split()
+        deduped: list[str] = []
+        for word in words:
+            normalized = re.sub(r"[^a-z0-9]+", "", word.lower())
+            previous = re.sub(r"[^a-z0-9]+", "", deduped[-1].lower()) if deduped else ""
+            if normalized and normalized == previous:
+                continue
+            deduped.append(word)
+        return " ".join(deduped)
+
+    @staticmethod
     def _clean_segments(raw_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cleaned: list[dict[str, Any]] = []
         previous_text = ""
         for segment in raw_segments:
             text = " ".join(str(segment.get("text", "")).split()).strip()
+            text = WhisperTranscriber._dedupe_repeated_words(text)
             normalized = re.sub(r"[^a-z0-9 ]+", "", text.lower()).strip()
             avg_logprob = float(segment.get("avg_logprob", -1.0))
             no_speech_prob = float(segment.get("no_speech_prob", 0.0))
@@ -113,6 +127,8 @@ class WhisperTranscriber:
                     "avg_logprob": avg_logprob,
                     "no_speech_prob": no_speech_prob,
                     "compression_ratio": compression_ratio,
+                    "words": segment.get("words", []),
+                    "hesitations": FILLER_RX.findall(text),
                 }
             )
             previous_text = normalized
@@ -127,6 +143,7 @@ class WhisperTranscriber:
             fp16=use_fp16,
             temperature=0,
             condition_on_previous_text=False,
+            word_timestamps=True,
             no_speech_threshold=0.6,
             logprob_threshold=-1.0,
             compression_ratio_threshold=2.4,

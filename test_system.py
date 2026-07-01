@@ -77,7 +77,7 @@ def test_models():
 
 if __name__ == "__main__":
     print("==================================================")
-    print("   Nexus AI - System Integrity Verification Test  ")
+    print("   Speech Intelligence and Intent Detection - System Integrity Verification Test  ")
     print("==================================================")
     try:
         test_imports()

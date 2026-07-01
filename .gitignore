@@ -1,3 +1,39 @@
+# ==========================
+# Hugging Face / Docker
+# ==========================
+frontend/out/
+
+
+# ==========================
+# Runtime & Generated Files
+# ==========================
+outputs/
+tmp/
+data/cache/
+
+jobs.db
+*.db
+*.sqlite
+*.sqlite3
+
+audio_history.tsv
+docker_benchmark_report.json
+models/sprint5_benchmark_report.json
+
+# Generated archives
+*.zip
+
+# Temporary test files
+tmp_test*.py
+upload_test.py
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
 .venv/
 __pycache__/
 *.py[cod]
@@ -10,6 +46,21 @@ frontend/*.tsbuildinfo
 
 data/raw/_uploads/
 
+uploads/*
+!uploads/.gitkeep
+!uploads/audio/
+!uploads/audio/.gitkeep
+!uploads/processed/
+!uploads/processed/.gitkeep
+!uploads/reports/
+!uploads/reports/.gitkeep
+
+database/*
+!database/.gitkeep
+
+logs/*
+!logs/.gitkeep
+nexus-template-extracted/
 *.log
 *.err
 test_*_results.json

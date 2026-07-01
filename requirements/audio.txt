@@ -1,0 +1,8 @@
+-r base.txt
+numpy
+requests
+openai-whisper
+torch
+pyannote.audio
+speechbrain
+hyperpyyaml
