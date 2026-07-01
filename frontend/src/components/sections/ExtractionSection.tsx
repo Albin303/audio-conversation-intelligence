@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import Image from 'next/image';
 import { AlertTriangle, ArrowRight, BrainCircuit, Loader2, ShieldCheck, UserRound, Zap } from 'lucide-react';
 import { scrollToSection } from '@/config/navigation';
 import { useAppStore } from '@/store/useAppStore';
@@ -314,18 +313,6 @@ export function ExtractionSection() {
             {/* Neural Network Canvas with Blur */}
             <div className="absolute inset-0 w-full h-full filter blur-[2px] opacity-[0.10] dark:opacity-[0.15] pointer-events-none -z-10">
               <NeuralNetworkCanvas />
-            </div>
-
-            {/* Ghost Image of 3D brain */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none -z-10 opacity-[0.08]">
-              <Image
-                src="/extraction-3d.png"
-                alt="AI Semantic Brain Ghost"
-                width={380}
-                height={380}
-                className="select-none filter drop-shadow(0 0 40px rgba(96,165,250,0.2))"
-                priority
-              />
             </div>
 
             <div className="relative z-10 w-full max-w-md mx-auto px-4">

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import Image from 'next/image';
 import { ArrowRight, LineChart, ListChecks, Loader2, Zap } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiService } from '@/services/api';
@@ -287,23 +286,11 @@ export function PredictionSection() {
         </div>
       ) : (
         <Reveal delay={0.08}>
-          {/* Empty state: full-section CSS animated background + ghost prediction-3d image */}
+          {/* Empty state: full-section CSS animated background */}
           <div className="relative min-h-[420px] rounded-3xl overflow-hidden flex items-center justify-center">
             {/* Animated data streams canvas */}
             <div className="absolute inset-0 w-full h-full opacity-[0.25] dark:opacity-[0.12] pointer-events-none -z-10">
               <DataStreamCanvas />
-            </div>
-
-            {/* Ghost prediction-3d image */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none -z-10 opacity-[0.08]">
-              <Image
-                src="/prediction-3d.png"
-                alt="Conversion Prediction Analytics Ghost"
-                width={300}
-                height={300}
-                className="select-none filter drop-shadow(0 0 40px rgba(96,165,250,0.2))"
-                priority
-              />
             </div>
 
             <div className="relative z-10 w-full max-w-md mx-auto px-4">

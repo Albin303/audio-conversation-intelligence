@@ -1,3 +1,13 @@
+---
+title: Enterprise Audio Intelligence
+emoji: 🏢
+colorFrom: green
+colorTo: yellow
+sdk: docker
+pinned: false
+short_description: 'Enterprise Audio Intelligence powered by AI '
+---
+
 # Sales Conversation Intelligence
 
 This project analyzes sales conversations from audio or text and exposes the workflow through:
