@@ -189,8 +189,8 @@ export function ProcessingPipelineSection() {
     if (stepStatuses.ready === 'complete') return 'All stages complete';
     if (isExtracting || recordingState === 'analyzing') return 'Extracting features…';
     if (isUploading) return 'Uploading and transcribing…';
-    if (recordingState === 'recording') return 'Capturing live audio…';
-    if (recordingState === 'processing') return 'Processing captured audio…';
+    if (recordingState === 'recording') return 'Recording live audio…';
+    if (recordingState === 'processing') return 'Processing recorded audio…';
     if (!audioFile && !transcription) return 'Waiting for audio input';
     return 'Pipeline idle';
   }, [audioFile, error, isExtracting, isUploading, recordingState, stepStatuses.ready, transcription]);
@@ -215,7 +215,7 @@ export function ProcessingPipelineSection() {
                 {audioFile
                   ? `${audioFile.name} · ${(audioFile.size / (1024 * 1024)).toFixed(2)} MB`
                   : recordingState !== 'idle'
-                    ? 'Live capture session'
+                    ? 'Live recording session'
                     : 'No active job'}
               </p>
             </div>

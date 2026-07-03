@@ -11,7 +11,7 @@ const steps = [
     icon: Volume2,
     title: 'Audio',
     subtitle: 'Raw Input',
-    description: 'Capture raw meetings, phone conversations, voice files, or streams with clean, loss-less recording pipes.',
+    description: 'Record raw meetings, phone conversations, voice files, or streams with clean, loss-less recording pipes.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {

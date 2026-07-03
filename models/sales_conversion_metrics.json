@@ -123,12 +123,12 @@
       "cv_precision": 0.6926,
       "cv_recall": 0.696,
       "cv_f1": 0.6941,
-      "cv_roc_auc": 0.7375,
+      "cv_roc_auc": 0.7376,
       "holdout_accuracy": 0.7175,
       "holdout_precision": 0.6968,
       "holdout_recall": 0.77,
       "holdout_f1": 0.7316,
-      "holdout_roc_auc": 0.7448,
+      "holdout_roc_auc": 0.7447,
       "threshold": 0.46
     }
   ],

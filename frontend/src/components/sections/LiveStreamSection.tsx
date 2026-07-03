@@ -20,8 +20,6 @@ export function LiveStreamSection() {
   const [recordedBytes, setRecordedBytes] = useState(0);
   const audioChunksRef = useRef<Blob[]>([]);
   const sourceStreamRef = useRef<MediaStream | null>(null);
-  const microphoneStreamRef = useRef<MediaStream | null>(null);
-  const mixedAudioContextRef = useRef<AudioContext | null>(null);
   const stopInProgressRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -41,47 +39,21 @@ export function LiveStreamSection() {
       audioChunksRef.current = [];
       stopInProgressRef.current = false;
 
-      // getDisplayMedia captures the meeting tab audio. getUserMedia captures the local speaker.
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true, // required by API, but we'll ignore it
-        audio: true
+      // Request microphone recording
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false
       });
       sourceStreamRef.current = stream;
-
-      // Extract only the audio track
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack) {
-        stream.getTracks().forEach((track) => track.stop());
-        sourceStreamRef.current = null;
-        throw new Error("No audio track found in the selected tab.");
-      }
-
-      let audioStream = new MediaStream([audioTrack]);
-      try {
-        const microphoneStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        microphoneStreamRef.current = microphoneStream;
-
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const audioContext = new AudioContextClass();
-        const destination = audioContext.createMediaStreamDestination();
-        audioContext.createMediaStreamSource(stream).connect(destination);
-        audioContext.createMediaStreamSource(microphoneStream).connect(destination);
-        mixedAudioContextRef.current = audioContext;
-        audioStream = destination.stream;
-      } catch (micError) {
-        console.warn('Microphone capture unavailable; recording shared tab audio only.', micError);
-      }
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
-      const recorder = new MediaRecorder(audioStream, { mimeType });
+      const recorder = new MediaRecorder(stream, { mimeType });
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -99,14 +71,14 @@ export function LiveStreamSection() {
       setRecordingState('recording');
       setSocketStatus('connected');
 
-      // Stop handling if user clicks 'stop sharing' in browser
-      audioTrack.onended = () => {
-        stopCapture();
-      };
-
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to capture browser audio. Please ensure you shared a tab with audio.');
+      // Handle microphone permission errors gracefully
+      const isPermissionDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+      const errMsg = isPermissionDenied
+        ? 'Microphone permission is required to record conversations.'
+        : (err.message || 'Failed to record audio.');
+      setError(errMsg);
       setRecordingState('idle');
       setSocketStatus('disconnected');
       stopCaptureDevices();
@@ -116,10 +88,6 @@ export function LiveStreamSection() {
   const stopCaptureDevices = () => {
     sourceStreamRef.current?.getTracks().forEach(t => t.stop());
     sourceStreamRef.current = null;
-    microphoneStreamRef.current?.getTracks().forEach(t => t.stop());
-    microphoneStreamRef.current = null;
-    void mixedAudioContextRef.current?.close();
-    mixedAudioContextRef.current = null;
   };
 
   const stopCapture = () => {
@@ -127,9 +95,6 @@ export function LiveStreamSection() {
     stopInProgressRef.current = true;
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stream.getAudioTracks().forEach((track) => {
-        track.onended = null;
-      });
       mediaRecorder.stop();
       mediaRecorder.stream.getTracks().forEach(t => t.stop());
       stopCaptureDevices();
@@ -145,7 +110,7 @@ export function LiveStreamSection() {
   const finalizeRecording = async () => {
     const chunks = audioChunksRef.current;
     if (!chunks.length) {
-      setError('No audio was captured. Please share a tab with audio and try again.');
+      setError('No audio was recorded. Please ensure your microphone is working and try again.');
       setRecordingState('idle');
       setSocketStatus('disconnected');
       stopInProgressRef.current = false;
@@ -154,7 +119,7 @@ export function LiveStreamSection() {
 
     const recordedAt = new Date().toISOString().replace(/[:.]/g, '-');
     const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-    const audioFile = new File([audioBlob], `meeting-capture-${recordedAt}.webm`, { type: 'audio/webm' });
+    const audioFile = new File([audioBlob], `conversation-recording-${recordedAt}.webm`, { type: 'audio/webm' });
 
     setSocketStatus('disconnected');
     setRecordingState('analyzing');
@@ -202,10 +167,10 @@ export function LiveStreamSection() {
             </div>
             <div>
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1 tracking-tight">
-                Live Browser Meeting Capture
+                Record Customer Conversation
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md">
-                Capture meeting tab audio and your microphone, then analyze one finalized recording.
+                Record customer conversations through the microphone, then analyze the finalized recording.
               </p>
             </div>
           </div>
@@ -226,7 +191,7 @@ export function LiveStreamSection() {
               ) : (
                 <Radio className="w-3.5 h-3.5 relative" />
               )}
-              <span className="relative">{socketStatus === 'connected' ? 'Capturing' : 'Recorder idle'}</span>
+              <span className="relative">{socketStatus === 'connected' ? 'Recording' : 'Recorder idle'}</span>
             </div>
 
             {recordingState === 'idle' || recordingState === 'completed' ? (
@@ -242,7 +207,7 @@ export function LiveStreamSection() {
                 style={{ background: 'linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%)' }}
               >
                 <Mic className="w-4 h-4" />
-                {recordingState === 'completed' ? 'Start New Capture' : 'Start Capture'}
+                {recordingState === 'completed' ? 'Start New Recording' : 'Start Recording'}
                 <span className="absolute inset-0 ring-1 ring-inset ring-white/20 rounded-2xl pointer-events-none" />
               </button>
             ) : recordingState === 'recording' ? (
@@ -255,7 +220,7 @@ export function LiveStreamSection() {
                   <span className="absolute inset-0 rounded-full bg-white animate-ping" />
                   <Square className="w-3 h-3 fill-white relative" />
                 </span>
-                Stop Capture
+                Stop Recording
               </button>
             ) : (
               <button
@@ -298,7 +263,7 @@ export function LiveStreamSection() {
                 </div>
               </div>
               <div className="text-center max-w-sm">
-                <p className="font-semibold text-slate-800 dark:text-white text-lg">Capture Complete & Analyzed!</p>
+                <p className="font-semibold text-slate-800 dark:text-white text-lg">Recording Complete & Analyzed!</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                   The meeting audio has been successfully transcribed, diarized, and evaluated for business signals.
                 </p>
@@ -337,7 +302,7 @@ export function LiveStreamSection() {
                 ))}
               </div>
               <div className="text-center">
-                <p className="font-semibold text-gray-700 dark:text-gray-200">Capturing meeting audio locally</p>
+                <p className="font-semibold text-gray-700 dark:text-gray-200">Recording conversation audio locally</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   <span className="font-mono font-semibold text-ai-blue">{capturedSizeMb} MB</span> buffered · Transcript appears after you stop recording.
                 </p>
@@ -372,9 +337,9 @@ export function LiveStreamSection() {
                 </div>
               </div>
               <div className="text-center max-w-xs">
-                <p className="font-semibold text-gray-700 dark:text-gray-200">Ready to capture</p>
+                <p className="font-semibold text-gray-700 dark:text-gray-200">Ready to record</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Click <span className="font-semibold text-ai-blue">Start Capture</span> and select the browser tab containing your meeting.
+                  Click <span className="font-semibold text-ai-blue">Start Recording</span> to begin capturing audio from your microphone.
                 </p>
               </div>
             </div>

@@ -20,7 +20,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { id: 'hero', label: 'Home', icon: Home, hint: 'Return to top' },
-  { id: 'live-stream', label: 'Live Stream Capture', icon: Activity, hint: 'Record speech' },
+  { id: 'live-stream', label: 'Record Conversation', icon: Activity, hint: 'Record speech' },
   { id: 'upload', label: 'Upload Audio', icon: UploadCloud, hint: 'Import audio' },
   { id: 'input', label: 'Conversation', icon: FileText, hint: 'Speech transcript' },
   { id: 'extraction', label: 'Feature Extraction', icon: BrainCircuit, hint: 'Signals & PII' },

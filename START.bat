@@ -114,7 +114,7 @@ timeout /t 2
 
 REM Start backend in new window
 echo Starting Backend API...
-start "Backend API" cmd /k "cd /d "%PROJECT_ROOT%" && .venv\Scripts\python.exe -m uvicorn src.api.server:app --reload --port 8000"
+start "Backend API" cmd /k "cd /d "%PROJECT_ROOT%" && .venv\Scripts\python.exe -m uvicorn src.api.server:app --reload --reload-dir src --port 8000"
 
 timeout /t 3
 

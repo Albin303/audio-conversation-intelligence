@@ -15,7 +15,7 @@ echo.
 echo Open a NEW terminal/command prompt and run:
 echo.
 echo   cd d:\Project -AI audio
-echo   .venv\Scripts\python.exe -m uvicorn src.api.server:app --reload --port 8000
+echo   .venv\Scripts\python.exe -m uvicorn src.api.server:app --reload --reload-dir src --port 8000
 echo.
 echo Expected output:
 echo   Uvicorn running on http://127.0.0.1:8000
