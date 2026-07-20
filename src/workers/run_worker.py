@@ -166,6 +166,9 @@ async def process_ml_job(job: dict[str, Any]) -> None:
         whisper_model=payload.get("whisper_model"),
         language=payload.get("language"),
     )
+    from src.services.sap_lead_service import sap_lead_service
+
+    result["sapLead"] = await sap_lead_service.create_lead_from_analysis(result)
 
     safe_text = analysis_service.privacy_safe_csv_text(result, text)
     analysis_service.append_transcript_csv(

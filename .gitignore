@@ -10,6 +10,7 @@ frontend/out/
 outputs/
 tmp/
 data/cache/
+ffmpeg-*/
 
 jobs.db
 *.db
@@ -49,10 +50,13 @@ data/raw/_uploads/
 uploads/*
 !uploads/.gitkeep
 !uploads/audio/
+uploads/audio/*
 !uploads/audio/.gitkeep
 !uploads/processed/
+uploads/processed/*
 !uploads/processed/.gitkeep
 !uploads/reports/
+uploads/reports/*
 !uploads/reports/.gitkeep
 
 database/*

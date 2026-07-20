@@ -56,6 +56,14 @@ export interface AppState {
       language?: string | null;
       whisperModel?: string | null;
     } | null;
+    sapLead?: {
+      leadCreated: boolean;
+      leadId?: string | null;
+      objectId?: string | null;
+      sapStatus: string;
+      httpStatus?: number | null;
+      error?: string | null;
+    };
   } | null;
   isPredicting: boolean;
   prediction: {

@@ -69,6 +69,9 @@ async def process_audio_job(job_id: str, tmp_path: str, filename: str, transcrib
             diarization=diarization,
             started=JOBS[job_id]["started_at"],
         )
+        from src.services.sap_lead_service import sap_lead_service
+
+        result["sapLead"] = await sap_lead_service.create_lead_from_analysis(result)
         
         JOBS[job_id]["status"] = "completed"
         JOBS[job_id]["progress_stage"] = "Completed"

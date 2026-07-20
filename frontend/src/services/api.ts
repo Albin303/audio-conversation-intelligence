@@ -117,6 +117,14 @@ export type BackendAnalysis = {
     extractionQuality?: Record<string, number | string>;
     extractionProvider?: string;
   };
+  sapLead?: {
+    leadCreated: boolean;
+    leadId?: string | null;
+    objectId?: string | null;
+    sapStatus: string;
+    httpStatus?: number | null;
+    error?: string | null;
+  };
 };
 
 export type FollowUpAlert = {
@@ -184,6 +192,7 @@ const toUiFeatures = (analysis: BackendAnalysis) => {
     conversationSummary: analysis.conversationSummary,
     conversionScore: analysis.conversionScore,
     audioQuality: analysis.audioQuality,
+    sapLead: analysis.sapLead,
     // Store original prediction data for the next step
     _rawPrediction: analysis.prediction,
     _rawSummary: analysis.summary,

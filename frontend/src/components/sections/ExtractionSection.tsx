@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { AlertTriangle, ArrowRight, BrainCircuit, Loader2, ShieldCheck, UserRound, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BrainCircuit, CheckCircle2, Loader2, ShieldCheck, UserRound, XCircle, Zap } from 'lucide-react';
 import { scrollToSection } from '@/config/navigation';
 import { useAppStore } from '@/store/useAppStore';
 import { apiService } from '@/services/api';
@@ -104,6 +104,7 @@ function NeuralNetworkCanvas() {
 
 export function ExtractionSection() {
   const { isExtracting, features, setPredicting, error, setError } = useAppStore();
+  const sapLead = features?.sapLead;
 
   const handlePredict = async () => {
     if (!features) return;
@@ -298,7 +299,60 @@ export function ExtractionSection() {
             </Card>
           </Reveal>
 
-          <Reveal delay={0.18} className="flex justify-center pt-4">
+          {sapLead && (
+            <Reveal delay={0.16}>
+              <Card padding="lg">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
+                        sapLead.leadCreated
+                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600'
+                          : 'border-amber-500/20 bg-amber-500/10 text-amber-600'
+                      }`}
+                    >
+                      {sapLead.leadCreated ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-nexus-fg">SAP Lead Creation</h3>
+                      <p className="text-xs text-nexus-muted">C4C lead sync result</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                      sapLead.leadCreated
+                        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600'
+                        : 'border-amber-500/20 bg-amber-500/10 text-amber-600'
+                    }`}
+                  >
+                    {sapLead.sapStatus}
+                  </span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { label: 'Lead Created', value: sapLead.leadCreated ? 'Yes' : 'No' },
+                    { label: 'Lead Number', value: sapLead.leadId || 'Not returned' },
+                    {
+                      label: 'Creation Status',
+                      value: sapLead.httpStatus ? `${sapLead.sapStatus} (${sapLead.httpStatus})` : sapLead.sapStatus,
+                    },
+                    { label: 'SAP Object ID', value: sapLead.objectId || 'Not returned' },
+                    { label: 'Errors', value: sapLead.error || 'None' },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl border border-nexus-border bg-nexus-bg/50 p-3">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-nexus-muted">
+                        {item.label}
+                      </span>
+                      <p className="mt-1 break-words text-sm font-medium text-nexus-fg">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </Reveal>
+          )}
+
+          <Reveal delay={0.2} className="flex justify-center pt-4">
             <Button size="lg" onClick={handlePredict} className="group">
               <Zap className="h-4 w-4" />
               Run Conversion Model
