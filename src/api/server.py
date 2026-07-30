@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import atexit
+import logging
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +35,9 @@ from datetime import datetime, timezone
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JOB_REPOSITORY = JobRepository()
+MANAGED_WORKER_PROCESSES: dict[str, subprocess.Popen[str]] = {}
+MANAGED_WORKER_HANDLES: dict[str, Any] = {}
+LOGGER = logging.getLogger("uvicorn")
 
 
 def local_structured_entities(text: str, diarization: Any) -> list[dict[str, Any]]:
@@ -48,6 +55,50 @@ def load_env_file(path: Path) -> None:
             continue
         key, value = line.split("=", 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def launch_worker_processes() -> dict[str, subprocess.Popen[str]]:
+    if MANAGED_WORKER_PROCESSES:
+        return MANAGED_WORKER_PROCESSES
+
+    if os.getenv("NEXUS_DISABLE_AUTO_WORKERS", "0").lower() in {"1", "true", "yes", "on"}:
+        return {}
+
+    log_dir = REPO_ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+
+    for worker_type in ("audio", "ml"):
+        worker_log = log_dir / f"{worker_type}_worker.log"
+        handle = worker_log.open("a", encoding="utf-8")
+        process = subprocess.Popen(
+            [sys.executable, "-m", "src.workers.run_worker"],
+            cwd=REPO_ROOT,
+            env={**env, "WORKER_TYPE": worker_type},
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        MANAGED_WORKER_PROCESSES[worker_type] = process
+        MANAGED_WORKER_HANDLES[worker_type] = handle
+
+    LOGGER.info("Started managed worker processes: %s", ", ".join(sorted(MANAGED_WORKER_PROCESSES)))
+    return MANAGED_WORKER_PROCESSES
+
+
+def stop_managed_workers() -> None:
+    for worker_type, process in list(MANAGED_WORKER_PROCESSES.items()):
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        handle = MANAGED_WORKER_HANDLES.pop(worker_type, None)
+        if handle is not None:
+            handle.close()
+        MANAGED_WORKER_PROCESSES.pop(worker_type, None)
 
 
 load_env_file(REPO_ROOT / ".env.local")
@@ -81,8 +132,10 @@ async def startup_event():
             break
     ensure_runtime_dirs()
     init_sqlite()
+    launch_worker_processes()
 
 
+atexit.register(stop_managed_workers)
 
 app.add_middleware(
     CORSMiddleware,

@@ -19,12 +19,20 @@ class SAPLeadService:
         self.client = client or SAPClient()
 
     async def create_lead_from_analysis(self, analysis_result: dict[str, Any]) -> dict[str, Any]:
+        payload: dict[str, Any] | None = None
         try:
             payload = map_pipeline_result_to_sap(
                 analysis_result,
                 lead_source=self.client.config.lead_source,
                 market_segment=self.client.config.market_segment,
             )
+            contact_summary = {
+                "givenName": payload.get("primaryContact", {}).get("givenName"),
+                "familyName": payload.get("primaryContact", {}).get("familyName"),
+                "email": payload.get("account", {}).get("address", {}).get("email"),
+                "phone": payload.get("account", {}).get("address", {}).get("mobileFormattedNumber"),
+            }
+            logger.info("sap_lead_mapped_payload", extra={"contact": contact_summary, "payload_name": payload.get("name")})
             client_result = await self.client.create_lead(payload)
             sap_result = {
                 "leadCreated": bool(client_result.get("lead_created")),
@@ -41,15 +49,20 @@ class SAPLeadService:
                     "sap_status": sap_result["sapStatus"],
                     "sap_http_status": sap_result["httpStatus"],
                     "sap_lead_id": sap_result["leadId"],
+                    "contact": contact_summary,
                 },
             )
             return sap_result
         except SAPRequestError as exc:
+            error = str(exc)
+            if exc.response_body:
+                error = f"{error}: {exc.response_body}"
             logger.warning(
                 "sap_lead_sync_failed",
                 extra={
                     "sap_status": "failed",
                     "sap_http_status": exc.status_code,
+                    "error": error,
                 },
             )
             return {
@@ -58,8 +71,8 @@ class SAPLeadService:
                 "objectId": None,
                 "sapStatus": "failed",
                 "httpStatus": exc.status_code,
-                "error": str(exc),
-                "payload": None,
+                "error": error,
+                "payload": payload,
             }
         except SAPC4CError as exc:
             logger.warning("sap_lead_sync_unavailable", extra={"sap_status": "failed"})

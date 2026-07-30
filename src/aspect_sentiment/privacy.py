@@ -6,19 +6,23 @@ from functools import lru_cache
 from typing import Iterable
 
 EMAIL_RX = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PHONE_RX = re.compile(r"(?:(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3,5}\)?[\s.-]?)?\d{3,5}[\s.-]?\d{4,6})")
+PHONE_RX = re.compile(r"\b(?:\+?\d{1,4}[\s.-]?)?(?:\(\d{1,5}\)[\s.-]?)?\d{2,5}(?:[\s.-]?\d{2,5}){1,4}\b")
 CUSTOMER_NAME_RX = re.compile(
-    r"\b(?i:my name is|this is|i am|i'm)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?=\b|[.,!?])",
+    r"\b(?:my name is|this is|i am|i'm)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})(?=\b|[.,!?])",
+    re.IGNORECASE,
 )
 ADDRESS_RX = re.compile(
     r"\b(?:i live (?:at|in)|my address is|address is)\s+([A-Za-z0-9][A-Za-z0-9,.\- /]{2,80})",
     re.IGNORECASE,
 )
 CUSTOMER_PHONE_RX = re.compile(
-    r"\b(?:my\s+)?(?:phone|mobile|contact|number)(?:\s+number)?\s*(?:is|:)?\s*((?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3,5}\)?[\s.-]?)?\d{3,5}[\s.-]?\d{4,6})",
+    r"\b(?:my\s+)?(?:phone|mobile|cell|contact|whatsapp|telephone|tel)?(?:\s+(?:number|no\.?|num))?\s*(?:is|:|=|at|on)?\s*((?:\+?\d{1,4}[\s.-]?)?(?:\(\d{1,5}\)[\s.-]?)?\d{2,5}(?:[\s.-]?\d{2,5}){1,4})\b",
     re.IGNORECASE,
 )
-COMPANY_RX = re.compile(r"\b(?:company is|work(?:ing)? at|from company)\s+([A-Z][A-Za-z0-9&.\- ]{2,40})", re.IGNORECASE)
+COMPANY_RX = re.compile(
+    r"\b(?:company(?:\s+name)?\s+(?:is|called|named)|work(?:ing)?\s+(?:at|for)|from\s+(?:the\s+)?company|organization\s+is)\s+([A-Za-z0-9&]+(?:\s+[A-Za-z0-9&]+){0,4})(?=\b|[.,!?])",
+    re.IGNORECASE,
+)
 JOB_RX = re.compile(r"\b(?:profession is|working as|work as|job title is)\s+(?:an?\s+)?([A-Za-z][A-Za-z /-]{2,40})", re.IGNORECASE)
 GENDER_RX = re.compile(r"\b(?:i am|i'm|gender is)\s+(male|female|non[- ]?binary|man|woman)\b", re.IGNORECASE)
 NON_NAME_TERMS = {

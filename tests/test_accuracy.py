@@ -145,6 +145,11 @@ class DiarizationAccuracyTests(unittest.TestCase):
             }
 
         with (
+            patch.dict("os.environ", {
+                "ENABLE_SPEAKER_TRACKING": "true",
+                "USE_LLM_DIARIZATION": "false",
+                "USE_GROQ_WHISPER": "false",
+            }),
             patch("src.aspect_sentiment.vad.get_speech_segments", return_value=vad_segments),
             patch("src.aspect_sentiment.embeddings.get_speaker_embedding", side_effect=embeddings),
             patch("src.aspect_sentiment.diarization._load_audio_mono", return_value=(np.zeros(32000), 16000)),

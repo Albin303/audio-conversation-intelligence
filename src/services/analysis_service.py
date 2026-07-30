@@ -30,7 +30,14 @@ from src.aspect_sentiment.llama_extraction import (
     rule_based_features,
     summarize_conversation,
 )
-from src.aspect_sentiment.privacy import PrivacyResult, extract_and_redact_pii
+from src.aspect_sentiment.privacy import (
+    COMPANY_RX,
+    CUSTOMER_PHONE_RX,
+    EMAIL_RX,
+    PHONE_RX,
+    PrivacyResult,
+    extract_and_redact_pii,
+)
 from src.aspect_sentiment.schemas import PipelineStage
 from src.nexus_ai.core.paths import AUDIO_UPLOADS_DIR, ensure_runtime_dirs
 from src.nexus_ai.repositories.sqlite import ConversationRepository
@@ -194,6 +201,16 @@ class AnalysisService:
                     "end": entity.get("end"),
                 })
                 grouped.setdefault(entity["type"], []).append(entity["value"])
+
+        # Normalize phone aliases across grouped dictionary
+        phone_values = []
+        for alias in ("customer_number", "phone", "mobile", "contact_phone", "contact_number", "phone_number", "mobile_number"):
+            for v in grouped.get(alias, []):
+                if v and v not in phone_values:
+                    phone_values.append(v)
+        if phone_values:
+            for alias in ("customer_number", "phone", "mobile", "contact_phone", "contact_number", "phone_number", "mobile_number"):
+                grouped[alias] = list(dict.fromkeys(grouped.get(alias, []) + phone_values))
 
         return {
             "entities": unique_entities,
@@ -612,6 +629,22 @@ class AnalysisService:
                     candidate = match.group("name")
                     if candidate.lower() not in {"sir", "madam", "maam", "ma'am", "there"}:
                         AnalysisService._append_entity(entities, "customer_name", candidate, "speaker-regex")
+
+        # Fallback regex extraction for contact fields across full transcript
+        for match in EMAIL_RX.finditer(text):
+            AnalysisService._append_entity(entities, "email", match.group(0).strip(), "local-regex")
+
+        for match in CUSTOMER_PHONE_RX.finditer(text):
+            val = match.group(1).strip() if match.lastindex else match.group(0).strip()
+            AnalysisService._append_entity(entities, "customer_number", val, "local-regex")
+
+        for match in PHONE_RX.finditer(text):
+            val = match.group(1).strip() if match.lastindex else match.group(0).strip()
+            AnalysisService._append_entity(entities, "phone", val, "local-regex")
+
+        for match in COMPANY_RX.finditer(text):
+            val = match.group(1).strip() if match.lastindex else match.group(0).strip()
+            AnalysisService._append_entity(entities, "company_name", val, "local-regex")
 
         return entities
 
